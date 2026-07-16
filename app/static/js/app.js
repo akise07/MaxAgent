@@ -299,10 +299,12 @@
         // 添加回复
         appendMessage('assistant', reply);
 
-        // 更新会话列表
+        // 更新会话列表与当前会话标题
         await loadConversations();
-
-        // 高亮当前会话
+        const conv = conversations.find(c => c.id === currentConversationId);
+        if (conv) {
+            chatTitle.textContent = conv.title;
+        }
         renderConversationList(searchInput.value);
     }
 

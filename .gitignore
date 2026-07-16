@@ -1,7 +1,8 @@
 __pycache__/
 .venv
 .env
-storage/
+app/storage/sessions/*
+# !app/storage/sessions/.gitkeep
 tests/images/**
 tests/outputs/**
 weights/**
