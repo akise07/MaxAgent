@@ -1,0 +1,7 @@
+__pycache__/
+.venv
+.env
+storage/
+tests/images/**
+tests/outputs/**
+weights/**

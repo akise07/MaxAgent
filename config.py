@@ -1,0 +1,16 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class Config:
+    """应用配置类，从 .env 文件和环境变量中读取配置"""
+
+    # VisionAgent API 配置
+    API_ENDPOINT: str = os.getenv("VISIONAGENT_API_ENDPOINT", "http://localhost:8111/v1")
+    API_KEY: str = os.getenv("VISIONAGENT_API_KEY", "")
+    MODEL_NAME: str = os.getenv("VISIONAGENT_MODEL_NAME", "hy3")
+
+
+# config = Config()
