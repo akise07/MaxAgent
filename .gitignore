@@ -3,6 +3,7 @@ __pycache__/
 .env
 app/storage/sessions/*
 # !app/storage/sessions/.gitkeep
-tests/images/**
-tests/outputs/**
-weights/**
+tests/images/*
+tests/outputs/*
+weights/*
+.workbuddy
