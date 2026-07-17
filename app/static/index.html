@@ -8,9 +8,9 @@
 </head>
 <body>
     <div id="app">
-        <!-- 左侧会话栏 -->
+        <!-- 左侧边栏 -->
         <aside id="sidebar">
-            <div class="sidebar-header">
+            <div class="sidebar-top">
                 <div class="logo">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
@@ -18,26 +18,104 @@
                     </svg>
                     <span>MaxAgent</span>
                 </div>
-                <button id="new-chat-btn" class="btn-new-chat" title="新对话">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+
+                <!-- 上半区：功能入口 -->
+                <nav class="nav-actions" aria-label="main actions">
+                    <button id="new-task-btn" class="nav-item" type="button">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span data-i18n="sidebar.new_task">新建任务</span>
+                    </button>
+                    <button id="skills-btn" class="nav-item" type="button">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                        </svg>
+                        <span data-i18n="sidebar.skills">技能</span>
+                    </button>
+                    <button id="automation-btn" class="nav-item" type="button">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                        <span data-i18n="sidebar.automation">自动化</span>
+                    </button>
+                </nav>
+            </div>
+
+            <!-- 下半区：任务/会话列表 -->
+            <div class="sidebar-tasks">
+                <div class="tasks-header">
+                    <span data-i18n="sidebar.tasks">任务列表</span>
+                </div>
+                <div class="sidebar-search">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
-                    新对话
-                </button>
+                    <input type="text" id="search-input" data-i18n-placeholder="sidebar.search_sessions" placeholder="搜索对话...">
+                </div>
+                <div id="conversation-list" class="conversation-list">
+                    <!-- 会话列表由 JS 动态渲染 -->
+                </div>
             </div>
-            <div class="sidebar-search">
-                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input type="text" id="search-input" placeholder="搜索对话...">
-            </div>
-            <div id="conversation-list" class="conversation-list">
-                <!-- 会话列表由 JS 动态渲染 -->
-            </div>
+
+            <!-- 左下角用户栏 -->
             <div class="sidebar-footer">
-                <div class="status-indicator">
-                    <span class="status-dot" id="status-dot"></span>
-                    <span id="status-text">就绪</span>
+                <div class="user-bar-wrap">
+                    <div id="user-menu" class="user-menu" hidden>
+                        <button type="button" class="user-menu-item" data-action="settings">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                            </svg>
+                            <span data-i18n="sidebar.settings">设置</span>
+                        </button>
+                        <button type="button" class="user-menu-item" data-action="appearance">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="5"/>
+                                <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                                <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                            </svg>
+                            <span data-i18n="sidebar.appearance">外观</span>
+                            <span id="theme-label" class="menu-meta">Dark</span>
+                        </button>
+                        <div class="user-menu-item has-submenu" data-action="language">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="2" y1="12" x2="22" y2="12"/>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                            </svg>
+                            <span data-i18n="sidebar.language">语言</span>
+                            <span id="lang-label" class="menu-meta">中文</span>
+                            <div class="lang-submenu">
+                                <button type="button" class="lang-option" data-lang="zh-CN">中文</button>
+                                <button type="button" class="lang-option" data-lang="en">English</button>
+                            </div>
+                        </div>
+                        <button type="button" class="user-menu-item" data-action="open-home">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                                <polyline points="9 22 9 12 15 12 15 22"/>
+                            </svg>
+                            <span data-i18n="sidebar.open_home">打开 Home 目录</span>
+                        </button>
+                    </div>
+
+                    <button id="user-bar" class="user-bar" type="button" aria-haspopup="menu" aria-expanded="false">
+                        <div class="user-avatar">M</div>
+                        <div class="user-info">
+                            <div class="user-name">MaxAgent</div>
+                            <div class="status-indicator">
+                                <span class="status-dot" id="status-dot"></span>
+                                <span id="status-text" data-i18n="status.ready">就绪</span>
+                            </div>
+                        </div>
+                        <svg class="user-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </aside>
@@ -53,13 +131,13 @@
                             <path d="M12 6v6l4 2"/>
                         </svg>
                     </div>
-                    <h1>有什么我可以帮您的？</h1>
-                    <p>开始对话，探索无限可能</p>
+                    <h1 data-i18n="chat.welcome_title">有什么我可以帮您的？</h1>
+                    <p data-i18n="chat.welcome_subtitle">开始对话，探索无限可能</p>
                     <div class="welcome-suggestions">
-                        <div class="suggestion-chip" data-text="用简单的话解释什么是量子计算">什么是量子计算？</div>
-                        <div class="suggestion-chip" data-text="帮我写一个Python函数，计算斐波那契数列">写一个 Python 函数</div>
-                        <div class="suggestion-chip" data-text="介绍一下机器学习的三种主要类型">机器学习类型</div>
-                        <div class="suggestion-chip" data-text="帮我规划一个学习Python的路线图">学习 Python 路线</div>
+                        <div class="suggestion-chip" data-text="用简单的话解释什么是量子计算" data-i18n="chat.suggest_quantum">什么是量子计算？</div>
+                        <div class="suggestion-chip" data-text="帮我写一个Python函数，计算斐波那契数列" data-i18n="chat.suggest_python">写一个 Python 函数</div>
+                        <div class="suggestion-chip" data-text="介绍一下机器学习的三种主要类型" data-i18n="chat.suggest_ml">机器学习类型</div>
+                        <div class="suggestion-chip" data-text="帮我规划一个学习Python的路线图" data-i18n="chat.suggest_roadmap">学习 Python 路线</div>
                     </div>
                 </div>
             </div>
@@ -67,14 +145,14 @@
             <!-- 对话区域 -->
             <div id="chat-area" class="chat-area" style="display:none;">
                 <div class="chat-header">
-                    <span id="chat-title">新对话</span>
+                    <span id="chat-title" data-i18n="sidebar.new_task">新对话</span>
                 </div>
                 <div id="messages" class="messages">
                     <!-- 消息由 JS 动态渲染 -->
                 </div>
                 <div class="input-area">
                     <div class="input-wrapper">
-                        <textarea id="message-input" rows="1" placeholder="输入消息..." autocomplete="off"></textarea>
+                        <textarea id="message-input" rows="1" data-i18n-placeholder="chat.message_placeholder" placeholder="输入消息..." autocomplete="off"></textarea>
                         <button id="send-btn" class="btn-send" disabled>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -83,8 +161,57 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 占位页：技能 / 自动化 -->
+            <div id="panel-skills" class="side-panel" style="display:none;">
+                <div class="side-panel-inner">
+                    <h2 data-i18n="sidebar.skills">技能</h2>
+                    <p data-i18n="skills.select_hint">技能库即将上线</p>
+                </div>
+            </div>
+            <div id="panel-automation" class="side-panel" style="display:none;">
+                <div class="side-panel-inner">
+                    <h2 data-i18n="sidebar.automation">自动化</h2>
+                    <p data-i18n="cron.no_jobs">自动化任务即将上线</p>
+                </div>
+            </div>
         </main>
     </div>
+
+    <!-- 设置弹窗 -->
+    <div id="settings-modal" class="modal" hidden>
+        <div class="modal-backdrop" data-close-modal></div>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <div class="modal-header">
+                <h3 id="settings-title" data-i18n="sidebar.settings">设置</h3>
+                <button type="button" class="modal-close" data-close-modal aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-row">
+                    <label data-i18n="status.model_name">模型</label>
+                    <span id="settings-model">-</span>
+                </div>
+                <div class="settings-row">
+                    <label data-i18n="config.base_url">API 地址</label>
+                    <span id="settings-endpoint">-</span>
+                </div>
+                <div class="settings-row">
+                    <label data-i18n="sidebar.appearance">外观</label>
+                    <button type="button" id="settings-theme-btn" class="btn-secondary"></button>
+                </div>
+                <div class="settings-row">
+                    <label data-i18n="sidebar.language">语言</label>
+                    <div class="lang-switch">
+                        <button type="button" class="btn-secondary lang-option" data-lang="zh-CN">中文</button>
+                        <button type="button" class="btn-secondary lang-option" data-lang="en">English</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" hidden></div>
 
     <script src="/static/js/i18n.js"></script>
     <script src="/static/js/app.js"></script>

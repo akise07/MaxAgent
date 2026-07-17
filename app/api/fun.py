@@ -1,4 +1,9 @@
-"""其他 API 接口封装：配置获取、聊天接口等。"""
+"""其他 API 接口封装：配置获取、聊天接口、打开目录等。"""
+import os
+import platform
+import subprocess
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
@@ -16,6 +21,10 @@ _session_manager: SessionManager | None = None
 _agent = None
 _config: Config | None = None
 
+# 项目根目录 / home 目录
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_HOME_DIR = _PROJECT_ROOT / "home"
+
 
 def init_dependencies(session_manager: SessionManager, agent, config: Config) -> None:
     """由 app.py 在启动时调用，注入依赖。"""
@@ -31,6 +40,18 @@ class ChatRequest(BaseModel):
     message: str
 
 
+def _open_in_file_manager(path: Path) -> None:
+    """用系统文件管理器打开目录。"""
+    target = str(path.resolve())
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(target)  # type: ignore[attr-defined]
+    elif system == "Darwin":
+        subprocess.Popen(["open", target])
+    else:
+        subprocess.Popen(["xdg-open", target])
+
+
 # ===== 接口 =====
 @router.get("/api/config")
 async def get_config():
@@ -40,7 +61,19 @@ async def get_config():
     return {
         "api_endpoint": _config.API_ENDPOINT,
         "model_name": _config.MODEL_NAME,
+        "home_dir": str(_HOME_DIR.resolve()),
     }
+
+
+@router.post("/api/open-home")
+async def open_home():
+    """在系统文件管理器中打开项目 home 目录。"""
+    try:
+        _HOME_DIR.mkdir(parents=True, exist_ok=True)
+        _open_in_file_manager(_HOME_DIR)
+        return {"ok": True, "path": str(_HOME_DIR.resolve())}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"打开 Home 目录失败: {e}") from e
 
 
 @router.post("/api/chat")

@@ -6,6 +6,8 @@
     let currentConversationId = null;
     let conversations = [];
     let isLoading = false;
+    let currentView = 'chat'; // chat | skills | automation
+    let theme = localStorage.getItem('maxagent-theme') || 'dark';
 
     // ===== DOM refs =====
     const $ = (id) => document.getElementById(id);
@@ -16,10 +18,23 @@
     const messageInput = $('message-input');
     const sendBtn = $('send-btn');
     const conversationList = $('conversation-list');
-    const newChatBtn = $('new-chat-btn');
+    const newTaskBtn = $('new-task-btn');
+    const skillsBtn = $('skills-btn');
+    const automationBtn = $('automation-btn');
     const searchInput = $('search-input');
     const statusDot = $('status-dot');
     const statusText = $('status-text');
+    const userBar = $('user-bar');
+    const userMenu = $('user-menu');
+    const themeLabel = $('theme-label');
+    const langLabel = $('lang-label');
+    const settingsModal = $('settings-modal');
+    const settingsModel = $('settings-model');
+    const settingsEndpoint = $('settings-endpoint');
+    const settingsThemeBtn = $('settings-theme-btn');
+    const panelSkills = $('panel-skills');
+    const panelAutomation = $('panel-automation');
+    const toastEl = $('toast');
 
     // ===== API Helpers =====
     async function api(url, options = {}) {
@@ -30,9 +45,70 @@
         const response = await fetch(url, config);
         if (!response.ok) {
             const err = await response.json().catch(() => ({ detail: response.statusText }));
-            throw new Error(err.detail || '请求失败');
+            throw new Error(err.detail || t('common.request_failed'));
         }
         return response.json();
+    }
+
+    // ===== Toast =====
+    let toastTimer = null;
+    function showToast(msg, isError = false) {
+        toastEl.textContent = msg;
+        toastEl.classList.toggle('error', !!isError);
+        toastEl.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            toastEl.hidden = true;
+        }, 2600);
+    }
+
+    // ===== Theme =====
+    function applyTheme(next) {
+        theme = next === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('maxagent-theme', theme);
+        updateThemeLabels();
+    }
+
+    function toggleTheme() {
+        applyTheme(theme === 'dark' ? 'light' : 'dark');
+    }
+
+    function updateThemeLabels() {
+        const label = theme === 'light' ? t('sidebar.theme_light') : t('sidebar.theme_dark');
+        if (themeLabel) themeLabel.textContent = label;
+        if (settingsThemeBtn) {
+            settingsThemeBtn.textContent = theme === 'light'
+                ? t('sidebar.switch_to_dark')
+                : t('sidebar.switch_to_light');
+        }
+    }
+
+    // ===== i18n apply =====
+    function applyI18n() {
+        document.documentElement.lang = currentLang === 'en' ? 'en' : 'zh-CN';
+        document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            const val = t(key);
+            if (val && val !== key) el.textContent = val;
+        });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            const val = t(key);
+            if (val && val !== key) el.placeholder = val;
+        });
+        if (langLabel) {
+            langLabel.textContent = currentLang === 'en' ? 'English' : '中文';
+        }
+        document.querySelectorAll('.lang-option').forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.lang === currentLang);
+        });
+        updateThemeLabels();
+        // re-render dynamic lists so empty states use current language
+        renderConversationList(searchInput ? searchInput.value : '');
+        if (statusDot && !statusDot.classList.contains('busy') && !statusDot.classList.contains('error')) {
+            setStatus('idle', t('status.ready'));
+        }
     }
 
     // ===== Conversation Management =====
@@ -40,13 +116,14 @@
         try {
             const data = await api('/api/conversations');
             conversations = data.conversations || [];
-            renderConversationList();
+            renderConversationList(searchInput ? searchInput.value : '');
         } catch (e) {
             console.error('加载会话列表失败:', e);
         }
     }
 
-    async function createConversation(title = '新对话') {
+    async function createConversation(title) {
+        title = title || t('sidebar.new_task');
         try {
             const data = await api('/api/conversations/new', {
                 method: 'POST',
@@ -63,6 +140,7 @@
             return data.conversation_id;
         } catch (e) {
             console.error('创建会话失败:', e);
+            showToast(e.message, true);
         }
     }
 
@@ -70,13 +148,18 @@
         try {
             await api(`/api/conversations/${id}`, { method: 'DELETE' });
             conversations = conversations.filter(c => c.id !== id);
-            renderConversationList();
+            renderConversationList(searchInput ? searchInput.value : '');
             if (currentConversationId === id) {
                 currentConversationId = null;
-                showWelcome();
+                if (conversations.length > 0) {
+                    await switchToConversation(conversations[0].id);
+                } else {
+                    showWelcome();
+                }
             }
         } catch (e) {
             console.error('删除会话失败:', e);
+            showToast(e.message, true);
         }
     }
 
@@ -92,7 +175,7 @@
 
     async function sendMessage(conversationId, message) {
         try {
-            setStatus('busy', '思考中...');
+            setStatus('busy', t('chat.thinking'));
             const data = await api('/api/chat', {
                 method: 'POST',
                 body: JSON.stringify({ conversation_id: conversationId, message }),
@@ -100,22 +183,23 @@
             return data.reply;
         } catch (e) {
             console.error('发送消息失败:', e);
-            return `发送消息失败: ${e.message}`;
+            return `${t('common.request_failed')}: ${e.message}`;
         } finally {
-            setStatus('idle', '就绪');
+            setStatus('idle', t('status.ready'));
         }
     }
 
     // ===== Rendering =====
     function renderConversationList(filter = '') {
+        if (!conversationList) return;
         const filtered = filter
-            ? conversations.filter(c => c.title.includes(filter))
+            ? conversations.filter(c => (c.title || '').includes(filter))
             : conversations;
 
         if (filtered.length === 0) {
             conversationList.innerHTML = `
                 <div class="empty-state" style="padding: 40px 16px; text-align: center;">
-                    ${filter ? '没有匹配的对话' : '暂无对话，点击上方按钮开始新对话'}
+                    ${filter ? t('sidebar.no_match') : t('sidebar.no_conversations')}
                 </div>
             `;
             return;
@@ -131,9 +215,9 @@
                 </div>
                 <div class="conv-info">
                     <div class="conv-title">${escapeHtml(c.title)}</div>
-                    <div class="conv-preview">${escapeHtml(c.preview || '暂无消息')}</div>
+                    <div class="conv-preview">${escapeHtml(c.preview || t('sidebar.no_messages'))}</div>
                 </div>
-                <button class="conv-delete" title="删除对话" data-id="${c.id}">
+                <button class="conv-delete" title="${t('sidebar.delete')}" data-id="${c.id}">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                     </svg>
@@ -141,11 +225,11 @@
             </div>
         `).join('');
 
-        // 绑定事件
         conversationList.querySelectorAll('.conversation-item').forEach(el => {
             el.addEventListener('click', (e) => {
                 if (e.target.closest('.conv-delete')) return;
                 const id = el.dataset.id;
+                setView('chat');
                 switchToConversation(id);
             });
         });
@@ -154,7 +238,10 @@
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const id = btn.dataset.id;
-                if (confirm('确定要删除此对话吗？')) {
+                const conv = conversations.find(c => c.id === id);
+                const title = conv ? conv.title : '';
+                const msg = t('sidebar.confirm_delete').replace('{title}', title);
+                if (confirm(msg)) {
                     await deleteConversation(id);
                 }
             });
@@ -163,11 +250,11 @@
 
     function renderMessages(messages) {
         if (!messages || messages.length === 0) {
-            messagesEl.innerHTML = '<div class="empty-state">开始对话吧</div>';
+            messagesEl.innerHTML = `<div class="empty-state">${t('chat.start_chat')}</div>`;
             return;
         }
 
-        messagesEl.innerHTML = messages.map((msg, index) => `
+        messagesEl.innerHTML = messages.map((msg) => `
             <div class="message ${msg.role}">
                 <div class="avatar">
                     ${msg.role === 'user' ? 'U' : 'A'}
@@ -217,13 +304,44 @@
         }, 50);
     }
 
+    // ===== View switching =====
+    function setView(view) {
+        currentView = view;
+        const isChat = view === 'chat';
+        const isSkills = view === 'skills';
+        const isAuto = view === 'automation';
+
+        if (panelSkills) panelSkills.style.display = isSkills ? 'flex' : 'none';
+        if (panelAutomation) panelAutomation.style.display = isAuto ? 'flex' : 'none';
+
+        if (isChat) {
+            // restore chat or welcome based on current conversation
+            if (currentConversationId) {
+                welcome.style.display = 'none';
+                chatArea.style.display = 'flex';
+            } else {
+                welcome.style.display = 'flex';
+                chatArea.style.display = 'none';
+            }
+        } else {
+            welcome.style.display = 'none';
+            chatArea.style.display = 'none';
+        }
+
+        if (newTaskBtn) newTaskBtn.classList.toggle('active', isChat);
+        if (skillsBtn) skillsBtn.classList.toggle('active', isSkills);
+        if (automationBtn) automationBtn.classList.toggle('active', isAuto);
+    }
+
     // ===== UI Helpers =====
     function showWelcome() {
+        setView('chat');
         welcome.style.display = 'flex';
         chatArea.style.display = 'none';
     }
 
     function showChatArea(title) {
+        setView('chat');
         welcome.style.display = 'none';
         chatArea.style.display = 'flex';
         chatTitle.textContent = title;
@@ -238,19 +356,15 @@
 
     function escapeHtml(text) {
         const div = document.createElement('div');
-        div.textContent = text;
+        div.textContent = text == null ? '' : String(text);
         return div.innerHTML;
     }
 
     function formatContent(content) {
         if (!content) return '';
-        // 简单处理代码块
         let escaped = escapeHtml(content);
-        // 处理代码块 ```code```
         escaped = escaped.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-        // 处理行内代码 `code`
         escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
-        // 处理换行
         escaped = escaped.replace(/\n/g, '<br>');
         return escaped;
     }
@@ -261,17 +375,18 @@
         isLoading = true;
 
         currentConversationId = id;
-        renderConversationList(searchInput.value);
+        renderConversationList(searchInput ? searchInput.value : '');
 
         const conv = conversations.find(c => c.id === id);
-        showChatArea(conv ? conv.title : '对话');
+        showChatArea(conv ? conv.title : t('sidebar.new_task'));
 
-        messagesEl.innerHTML = '<div class="empty-state">加载中...</div>';
+        messagesEl.innerHTML = `<div class="empty-state">${t('common.loading')}</div>`;
 
         const messages = await loadMessages(id);
         renderMessages(messages);
 
         isLoading = false;
+        sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
     }
 
     // ===== Send Message =====
@@ -279,48 +394,169 @@
         const text = messageInput.value.trim();
         if (!text || !currentConversationId || isLoading) return;
 
-        // 清空输入
         messageInput.value = '';
         sendBtn.disabled = true;
         messageInput.style.height = 'auto';
 
-        // 添加用户消息
         appendMessage('user', text);
-
-        // 显示打字指示器
         showTyping();
 
-        // 发送请求
         const reply = await sendMessage(currentConversationId, text);
 
-        // 移除打字指示器
         removeTyping();
-
-        // 添加回复
         appendMessage('assistant', reply);
 
-        // 更新会话列表与当前会话标题
         await loadConversations();
         const conv = conversations.find(c => c.id === currentConversationId);
         if (conv) {
             chatTitle.textContent = conv.title;
         }
-        renderConversationList(searchInput.value);
+        renderConversationList(searchInput ? searchInput.value : '');
+    }
+
+    // ===== User menu =====
+    function openUserMenu() {
+        userMenu.hidden = false;
+        userBar.classList.add('open');
+        userBar.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeUserMenu() {
+        userMenu.hidden = true;
+        userBar.classList.remove('open');
+        userBar.setAttribute('aria-expanded', 'false');
+        const submenu = userMenu.querySelector('.has-submenu');
+        if (submenu) submenu.classList.remove('open');
+    }
+
+    function toggleUserMenu() {
+        if (userMenu.hidden) openUserMenu();
+        else closeUserMenu();
+    }
+
+    async function openHomeDir() {
+        try {
+            const data = await api('/api/open-home', { method: 'POST' });
+            showToast(data.path ? `${t('sidebar.open_home')}: ${data.path}` : t('sidebar.open_home_ok'));
+        } catch (e) {
+            console.error(e);
+            showToast(e.message || t('sidebar.open_home_failed'), true);
+        }
+    }
+
+    async function loadSettings() {
+        try {
+            const data = await api('/api/config');
+            if (settingsModel) settingsModel.textContent = data.model_name || '-';
+            if (settingsEndpoint) settingsEndpoint.textContent = data.api_endpoint || '-';
+        } catch (e) {
+            if (settingsModel) settingsModel.textContent = '-';
+            if (settingsEndpoint) settingsEndpoint.textContent = '-';
+        }
+        updateThemeLabels();
+    }
+
+    function openSettings() {
+        closeUserMenu();
+        settingsModal.hidden = false;
+        loadSettings();
+    }
+
+    function closeSettings() {
+        settingsModal.hidden = true;
     }
 
     // ===== Event Listeners =====
-    newChatBtn.addEventListener('click', () => {
-        createConversation();
+    if (newTaskBtn) {
+        newTaskBtn.addEventListener('click', () => {
+            setView('chat');
+            createConversation();
+        });
+    }
+
+    if (skillsBtn) {
+        skillsBtn.addEventListener('click', () => {
+            setView('skills');
+            closeUserMenu();
+        });
+    }
+
+    if (automationBtn) {
+        automationBtn.addEventListener('click', () => {
+            setView('automation');
+            closeUserMenu();
+        });
+    }
+
+    if (userBar) {
+        userBar.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleUserMenu();
+        });
+    }
+
+    if (userMenu) {
+        userMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = e.target.closest('[data-action]');
+            if (!item) return;
+            const action = item.dataset.action;
+
+            if (action === 'settings') {
+                openSettings();
+            } else if (action === 'appearance') {
+                toggleTheme();
+            } else if (action === 'language') {
+                // 点击语言行本身时展开/收起子菜单（点语言选项由下方单独处理）
+                if (!e.target.closest('.lang-option')) {
+                    item.classList.toggle('open');
+                }
+            } else if (action === 'open-home') {
+                closeUserMenu();
+                openHomeDir();
+            }
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!userMenu.hidden && !e.target.closest('.user-bar-wrap')) {
+            closeUserMenu();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeUserMenu();
+            closeSettings();
+        }
+    });
+
+    document.querySelectorAll('.lang-option').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const lang = btn.dataset.lang;
+            if (lang) {
+                setLang(lang);
+                localStorage.setItem('maxagent-lang', lang);
+                applyI18n();
+                closeUserMenu();
+            }
+        });
+    });
+
+    if (settingsThemeBtn) {
+        settingsThemeBtn.addEventListener('click', () => toggleTheme());
+    }
+
+    document.querySelectorAll('[data-close-modal]').forEach((el) => {
+        el.addEventListener('click', closeSettings);
     });
 
     sendBtn.addEventListener('click', handleSend);
 
     messageInput.addEventListener('input', () => {
-        // 自动调整高度
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
-
-        // 启用/禁用发送按钮
         sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
     });
 
@@ -335,10 +571,10 @@
         renderConversationList(searchInput.value);
     });
 
-    // 欢迎页建议词点击
     document.querySelectorAll('.suggestion-chip').forEach(chip => {
         chip.addEventListener('click', async () => {
             const text = chip.dataset.text;
+            setView('chat');
             if (!currentConversationId) {
                 await createConversation();
             }
@@ -350,16 +586,24 @@
         });
     });
 
+    window.addEventListener('language-changed', applyI18n);
+
     // ===== Init =====
     async function init() {
-        setStatus('idle', '就绪');
+        // language from localStorage or default
+        const savedLang = localStorage.getItem('maxagent-lang');
+        if (savedLang) setLang(savedLang);
+
+        applyTheme(theme);
+        applyI18n();
+        setStatus('idle', t('status.ready'));
+        setView('chat');
+
         await loadConversations();
 
-        // 如果有会话，自动切换到第一个
         if (conversations.length > 0) {
             await switchToConversation(conversations[0].id);
         } else {
-            // 自动创建一个新会话
             await createConversation();
         }
     }
