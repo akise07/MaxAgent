@@ -1,13 +1,20 @@
 // MaxAgent Frontend App
-(function() {
+(function () {
     'use strict';
 
     // ===== State =====
     let currentConversationId = null;
     let conversations = [];
     let isLoading = false;
-    let currentView = 'chat'; // chat | skills | automation
+    let currentView = 'chat';
     let theme = localStorage.getItem('maxagent-theme') || 'dark';
+    let taskAttachments = [];
+    let models = [];
+    let selectedModelId = localStorage.getItem('maxagent-model-id') || null;
+    let workspaceMode = localStorage.getItem('maxagent-workspace') || 'select';
+    let permissionMode = localStorage.getItem('maxagent-permission') || 'default';
+    let settingsTab = 'system';
+    let editingModelId = null;
 
     // ===== DOM refs =====
     const $ = (id) => document.getElementById(id);
@@ -35,6 +42,25 @@
     const panelSkills = $('panel-skills');
     const panelAutomation = $('panel-automation');
     const toastEl = $('toast');
+    const newTaskPage = $('new-task-page');
+    const taskInput = $('task-input');
+    const taskSendBtn = $('task-send-btn');
+    const taskAttachmentsEl = $('task-attachments');
+    const taskFileInput = $('task-file-input');
+    const taskModelLabel = $('task-model-label');
+    const taskModelBtn = $('task-model-btn');
+    const taskModelMenu = $('task-model-menu');
+    const closeNewTaskBtn = $('close-new-task-btn');
+    const welcomeNewTaskBtn = $('welcome-new-task-btn');
+    const taskPlusBtn = $('task-plus-btn');
+    const taskPlusMenu = $('task-plus-menu');
+    const workspaceBtn = $('workspace-btn');
+    const workspaceMenu = $('workspace-menu');
+    const workspaceLabel = $('workspace-label');
+    const permissionBtn = $('permission-btn');
+    const permissionMenu = $('permission-menu');
+    const permissionLabel = $('permission-label');
+    const modelListEl = $('model-list');
 
     // ===== API Helpers =====
     async function api(url, options = {}) {
@@ -47,6 +73,7 @@
             const err = await response.json().catch(() => ({ detail: response.statusText }));
             throw new Error(err.detail || t('common.request_failed'));
         }
+        if (response.status === 204) return null;
         return response.json();
     }
 
@@ -57,9 +84,7 @@
         toastEl.classList.toggle('error', !!isError);
         toastEl.hidden = false;
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => {
-            toastEl.hidden = true;
-        }, 2600);
+        toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2600);
     }
 
     // ===== Theme =====
@@ -69,11 +94,7 @@
         localStorage.setItem('maxagent-theme', theme);
         updateThemeLabels();
     }
-
-    function toggleTheme() {
-        applyTheme(theme === 'dark' ? 'light' : 'dark');
-    }
-
+    function toggleTheme() { applyTheme(theme === 'dark' ? 'light' : 'dark'); }
     function updateThemeLabels() {
         const label = theme === 'light' ? t('sidebar.theme_light') : t('sidebar.theme_dark');
         if (themeLabel) themeLabel.textContent = label;
@@ -84,7 +105,7 @@
         }
     }
 
-    // ===== i18n apply =====
+    // ===== i18n =====
     function applyI18n() {
         document.documentElement.lang = currentLang === 'en' ? 'en' : 'zh-CN';
         document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -97,21 +118,103 @@
             const val = t(key);
             if (val && val !== key) el.placeholder = val;
         });
-        if (langLabel) {
-            langLabel.textContent = currentLang === 'en' ? 'English' : '中文';
-        }
+        document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            const val = t(key);
+            if (val && val !== key) el.title = val;
+        });
+        if (langLabel) langLabel.textContent = currentLang === 'en' ? 'English' : '中文';
         document.querySelectorAll('.lang-option').forEach((btn) => {
             btn.classList.toggle('active', btn.dataset.lang === currentLang);
         });
         updateThemeLabels();
-        // re-render dynamic lists so empty states use current language
+        updateWorkspaceLabel();
+        updatePermissionLabel();
+        updateModelPickerLabel();
         renderConversationList(searchInput ? searchInput.value : '');
         if (statusDot && !statusDot.classList.contains('busy') && !statusDot.classList.contains('error')) {
             setStatus('idle', t('status.ready'));
         }
     }
 
-    // ===== Conversation Management =====
+    // ===== Models =====
+    async function loadModels() {
+        try {
+            const data = await api('/api/models');
+            models = data.models || [];
+            if (!selectedModelId || !models.some((m) => m.id === selectedModelId)) {
+                selectedModelId = data.default_model_id || (models[0] && models[0].id) || null;
+                if (selectedModelId) localStorage.setItem('maxagent-model-id', selectedModelId);
+            }
+            updateModelPickerLabel();
+            renderModelMenu();
+            renderModelList();
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function getSelectedModel() {
+        return models.find((m) => m.id === selectedModelId) || models[0] || null;
+    }
+
+    function updateModelPickerLabel() {
+        const m = getSelectedModel();
+        if (taskModelLabel) {
+            taskModelLabel.textContent = m ? (m.name || m.model_id || 'model') : '-';
+        }
+    }
+
+    function renderModelMenu() {
+        if (!taskModelMenu) return;
+        if (!models.length) {
+            taskModelMenu.innerHTML = `<div class="dropdown-item" style="cursor:default;opacity:.7">${t('settings.no_models')}</div>`;
+            return;
+        }
+        taskModelMenu.innerHTML = models.map((m) => `
+            <button type="button" class="dropdown-item ${m.id === selectedModelId ? 'active' : ''}" data-model-id="${m.id}">
+                <span>${escapeHtml(m.name || m.model_id)}</span>
+                ${m.is_default ? `<span class="badge-default">${t('settings.default')}</span>` : ''}
+            </button>
+        `).join('');
+        taskModelMenu.querySelectorAll('[data-model-id]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                selectedModelId = btn.dataset.modelId;
+                localStorage.setItem('maxagent-model-id', selectedModelId);
+                updateModelPickerLabel();
+                closeAllDropdowns();
+            });
+        });
+    }
+
+    function renderModelList() {
+        if (!modelListEl) return;
+        if (!models.length) {
+            modelListEl.innerHTML = `<div class="settings-hint">${t('settings.no_models')}</div>`;
+            return;
+        }
+        modelListEl.innerHTML = models.map((m) => `
+            <div class="model-list-item" data-id="${m.id}">
+                <div class="meta">
+                    <div class="name">
+                        ${escapeHtml(m.name || m.model_id || 'model')}
+                        ${m.is_default ? `<span class="badge-default">${t('settings.default')}</span>` : ''}
+                    </div>
+                    <div class="sub">${escapeHtml(m.model_id || '')} · ${escapeHtml(m.api_endpoint || '')}</div>
+                </div>
+                <button type="button" class="model-edit-btn" data-edit-model="${m.id}" title="${t('settings.edit_model')}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                    </svg>
+                </button>
+            </div>
+        `).join('');
+        modelListEl.querySelectorAll('[data-edit-model]').forEach((btn) => {
+            btn.addEventListener('click', () => openModelEdit(btn.dataset.editModel));
+        });
+    }
+
+    // ===== Conversation =====
     async function loadConversations() {
         try {
             const data = await api('/api/conversations');
@@ -136,29 +239,25 @@
                 message_count: 0,
             });
             renderConversationList();
-            switchToConversation(data.conversation_id);
             return data.conversation_id;
         } catch (e) {
-            console.error('创建会话失败:', e);
+            console.error(e);
             showToast(e.message, true);
+            return null;
         }
     }
 
     async function deleteConversation(id) {
         try {
             await api(`/api/conversations/${id}`, { method: 'DELETE' });
-            conversations = conversations.filter(c => c.id !== id);
+            conversations = conversations.filter((c) => c.id !== id);
             renderConversationList(searchInput ? searchInput.value : '');
             if (currentConversationId === id) {
                 currentConversationId = null;
-                if (conversations.length > 0) {
-                    await switchToConversation(conversations[0].id);
-                } else {
-                    showWelcome();
-                }
+                if (conversations.length > 0) await switchToConversation(conversations[0].id);
+                else showWelcome();
             }
         } catch (e) {
-            console.error('删除会话失败:', e);
             showToast(e.message, true);
         }
     }
@@ -168,46 +267,43 @@
             const data = await api(`/api/conversations/${conversationId}`);
             return data.messages || [];
         } catch (e) {
-            console.error('加载消息失败:', e);
             return [];
         }
     }
 
-    async function sendMessage(conversationId, message) {
+    async function sendMessage(conversationId, message, modelId) {
         try {
             setStatus('busy', t('chat.thinking'));
             const data = await api('/api/chat', {
                 method: 'POST',
-                body: JSON.stringify({ conversation_id: conversationId, message }),
+                body: JSON.stringify({
+                    conversation_id: conversationId,
+                    message,
+                    model_id: modelId || selectedModelId || null,
+                }),
             });
             return data.reply;
         } catch (e) {
-            console.error('发送消息失败:', e);
             return `${t('common.request_failed')}: ${e.message}`;
         } finally {
             setStatus('idle', t('status.ready'));
         }
     }
 
-    // ===== Rendering =====
     function renderConversationList(filter = '') {
         if (!conversationList) return;
         const filtered = filter
-            ? conversations.filter(c => (c.title || '').includes(filter))
+            ? conversations.filter((c) => (c.title || '').includes(filter))
             : conversations;
-
         if (filtered.length === 0) {
             conversationList.innerHTML = `
                 <div class="empty-state" style="padding: 40px 16px; text-align: center;">
                     ${filter ? t('sidebar.no_match') : t('sidebar.no_conversations')}
-                </div>
-            `;
+                </div>`;
             return;
         }
-
-        conversationList.innerHTML = filtered.map(c => `
-            <div class="conversation-item ${c.id === currentConversationId ? 'active' : ''}"
-                 data-id="${c.id}">
+        conversationList.innerHTML = filtered.map((c) => `
+            <div class="conversation-item ${c.id === currentConversationId ? 'active' : ''}" data-id="${c.id}">
                 <div class="conv-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -224,26 +320,19 @@
                 </button>
             </div>
         `).join('');
-
-        conversationList.querySelectorAll('.conversation-item').forEach(el => {
+        conversationList.querySelectorAll('.conversation-item').forEach((el) => {
             el.addEventListener('click', (e) => {
                 if (e.target.closest('.conv-delete')) return;
-                const id = el.dataset.id;
-                setView('chat');
-                switchToConversation(id);
+                switchToConversation(el.dataset.id);
             });
         });
-
-        conversationList.querySelectorAll('.conv-delete').forEach(btn => {
+        conversationList.querySelectorAll('.conv-delete').forEach((btn) => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const id = btn.dataset.id;
-                const conv = conversations.find(c => c.id === id);
-                const title = conv ? conv.title : '';
-                const msg = t('sidebar.confirm_delete').replace('{title}', title);
-                if (confirm(msg)) {
-                    await deleteConversation(id);
-                }
+                const conv = conversations.find((c) => c.id === id);
+                const msg = t('sidebar.confirm_delete').replace('{title}', conv ? conv.title : '');
+                if (confirm(msg)) await deleteConversation(id);
             });
         });
     }
@@ -253,16 +342,12 @@
             messagesEl.innerHTML = `<div class="empty-state">${t('chat.start_chat')}</div>`;
             return;
         }
-
         messagesEl.innerHTML = messages.map((msg) => `
             <div class="message ${msg.role}">
-                <div class="avatar">
-                    ${msg.role === 'user' ? 'U' : 'A'}
-                </div>
+                <div class="avatar">${msg.role === 'user' ? 'U' : 'A'}</div>
                 <div class="bubble">${formatContent(msg.content)}</div>
             </div>
         `).join('');
-
         scrollToBottom();
     }
 
@@ -271,8 +356,7 @@
         div.className = `message ${role}`;
         div.innerHTML = `
             <div class="avatar">${role === 'user' ? 'U' : 'A'}</div>
-            <div class="bubble">${formatContent(content)}</div>
-        `;
+            <div class="bubble">${formatContent(content)}</div>`;
         messagesEl.appendChild(div);
         scrollToBottom();
     }
@@ -281,70 +365,69 @@
         const div = document.createElement('div');
         div.className = 'message assistant';
         div.id = 'typing-indicator';
-        div.innerHTML = `
-            <div class="avatar">A</div>
-            <div class="bubble">
-                <div class="typing-indicator">
-                    <span></span><span></span><span></span>
-                </div>
-            </div>
-        `;
+        div.innerHTML = `<div class="avatar">A</div><div class="bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
         messagesEl.appendChild(div);
         scrollToBottom();
     }
-
     function removeTyping() {
         const el = document.getElementById('typing-indicator');
         if (el) el.remove();
     }
-
     function scrollToBottom() {
-        setTimeout(() => {
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }, 50);
+        setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 50);
     }
 
-    // ===== View switching =====
+    // ===== Views =====
+    function hideAllMainViews() {
+        if (welcome) welcome.style.display = 'none';
+        if (chatArea) chatArea.style.display = 'none';
+        if (newTaskPage) newTaskPage.style.display = 'none';
+        if (panelSkills) panelSkills.style.display = 'none';
+        if (panelAutomation) panelAutomation.style.display = 'none';
+    }
+
     function setView(view) {
         currentView = view;
-        const isChat = view === 'chat';
+        hideAllMainViews();
+        const isNewTask = view === 'new-task';
         const isSkills = view === 'skills';
         const isAuto = view === 'automation';
-
-        if (panelSkills) panelSkills.style.display = isSkills ? 'flex' : 'none';
-        if (panelAutomation) panelAutomation.style.display = isAuto ? 'flex' : 'none';
-
-        if (isChat) {
-            // restore chat or welcome based on current conversation
-            if (currentConversationId) {
-                welcome.style.display = 'none';
-                chatArea.style.display = 'flex';
-            } else {
-                welcome.style.display = 'flex';
-                chatArea.style.display = 'none';
-            }
-        } else {
-            welcome.style.display = 'none';
-            chatArea.style.display = 'none';
-        }
-
-        if (newTaskBtn) newTaskBtn.classList.toggle('active', isChat);
+        const isWelcome = view === 'welcome';
+        const isChat = view === 'chat';
+        if (isNewTask && newTaskPage) newTaskPage.style.display = 'flex';
+        else if (isSkills && panelSkills) panelSkills.style.display = 'flex';
+        else if (isAuto && panelAutomation) panelAutomation.style.display = 'flex';
+        else if (isWelcome && welcome) welcome.style.display = 'flex';
+        else if (isChat && chatArea) chatArea.style.display = 'flex';
+        if (newTaskBtn) newTaskBtn.classList.toggle('active', isNewTask);
         if (skillsBtn) skillsBtn.classList.toggle('active', isSkills);
         if (automationBtn) automationBtn.classList.toggle('active', isAuto);
     }
 
-    // ===== UI Helpers =====
     function showWelcome() {
-        setView('chat');
-        welcome.style.display = 'flex';
-        chatArea.style.display = 'none';
+        currentConversationId = null;
+        renderConversationList(searchInput ? searchInput.value : '');
+        setView('welcome');
     }
 
     function showChatArea(title) {
         setView('chat');
-        welcome.style.display = 'none';
-        chatArea.style.display = 'flex';
-        chatTitle.textContent = title;
+        if (chatTitle) chatTitle.textContent = title;
+    }
+
+    function openNewTaskPage() {
+        resetTaskComposer();
+        loadModels();
+        setView('new-task');
+        currentConversationId = null;
+        renderConversationList(searchInput ? searchInput.value : '');
+        if (taskInput) setTimeout(() => taskInput.focus(), 50);
+    }
+
+    function closeNewTaskPage() {
+        resetTaskComposer();
+        if (conversations.length > 0) switchToConversation(conversations[0].id);
+        else showWelcome();
     }
 
     function setStatus(state, text) {
@@ -369,58 +452,181 @@
         return escaped;
     }
 
-    // ===== Conversation Switching =====
+    // ===== Task composer =====
+    function resetTaskComposer() {
+        taskAttachments = [];
+        if (taskInput) {
+            taskInput.value = '';
+            taskInput.style.height = 'auto';
+        }
+        document.querySelectorAll('.capability-chip').forEach((c) => c.classList.remove('active'));
+        renderTaskAttachments();
+        updateTaskSendState();
+        if (taskFileInput) taskFileInput.value = '';
+        closeAllDropdowns();
+    }
+
+    function updateTaskSendState() {
+        if (!taskSendBtn) return;
+        const hasText = taskInput && taskInput.value.trim().length > 0;
+        const hasFiles = taskAttachments.length > 0;
+        taskSendBtn.disabled = !(hasText || hasFiles) || isLoading;
+    }
+
+    function renderTaskAttachments() {
+        if (!taskAttachmentsEl) return;
+        if (taskAttachments.length === 0) {
+            taskAttachmentsEl.hidden = true;
+            taskAttachmentsEl.innerHTML = '';
+            return;
+        }
+        taskAttachmentsEl.hidden = false;
+        taskAttachmentsEl.innerHTML = taskAttachments.map((a) => `
+            <div class="task-attach-chip" data-id="${a.id}">
+                <span class="name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+                <button type="button" class="remove-attach" data-id="${a.id}" aria-label="remove">×</button>
+            </div>
+        `).join('');
+        taskAttachmentsEl.querySelectorAll('.remove-attach').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                taskAttachments = taskAttachments.filter((x) => x.id !== btn.dataset.id);
+                renderTaskAttachments();
+                updateTaskSendState();
+            });
+        });
+    }
+
+    function addFilesToAttachments(fileList) {
+        Array.from(fileList || []).forEach((file) => {
+            taskAttachments.push({
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                name: file.name,
+                type: file.type.startsWith('image/') ? 'image' : 'file',
+                file,
+            });
+        });
+        renderTaskAttachments();
+        updateTaskSendState();
+    }
+
+    function buildTaskMessage(text) {
+        const parts = [text.trim()];
+        if (taskAttachments.length > 0) {
+            parts.push(`[attachments: ${taskAttachments.map((a) => a.name).join(', ')}]`);
+        }
+        parts.push(`[workspace: ${workspaceMode}]`);
+        parts.push(`[permission: ${permissionMode}]`);
+        const m = getSelectedModel();
+        if (m) parts.push(`[model: ${m.name || m.model_id}]`);
+        return parts.filter(Boolean).join('\n');
+    }
+
+    async function submitNewTask() {
+        const text = taskInput ? taskInput.value.trim() : '';
+        if (!text && taskAttachments.length === 0) {
+            showToast(t('task.empty_task'), true);
+            return;
+        }
+        if (isLoading) return;
+        isLoading = true;
+        updateTaskSendState();
+        const title = (text || t('sidebar.new_task')).slice(0, 20);
+        const message = buildTaskMessage(text || t('sidebar.new_task'));
+        try {
+            const id = await createConversation(title);
+            if (!id) return;
+            currentConversationId = id;
+            showChatArea(title);
+            messagesEl.innerHTML = '';
+            appendMessage('user', message);
+            showTyping();
+            const reply = await sendMessage(id, message, selectedModelId);
+            removeTyping();
+            appendMessage('assistant', reply);
+            await loadConversations();
+            const conv = conversations.find((c) => c.id === id);
+            if (conv && chatTitle) chatTitle.textContent = conv.title;
+            renderConversationList(searchInput ? searchInput.value : '');
+            resetTaskComposer();
+        } finally {
+            isLoading = false;
+            updateTaskSendState();
+            if (sendBtn && messageInput) {
+                sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
+            }
+        }
+    }
+
     async function switchToConversation(id) {
         if (isLoading) return;
         isLoading = true;
-
         currentConversationId = id;
         renderConversationList(searchInput ? searchInput.value : '');
-
-        const conv = conversations.find(c => c.id === id);
+        const conv = conversations.find((c) => c.id === id);
         showChatArea(conv ? conv.title : t('sidebar.new_task'));
-
         messagesEl.innerHTML = `<div class="empty-state">${t('common.loading')}</div>`;
-
         const messages = await loadMessages(id);
         renderMessages(messages);
-
         isLoading = false;
         sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
     }
 
-    // ===== Send Message =====
     async function handleSend() {
         const text = messageInput.value.trim();
         if (!text || !currentConversationId || isLoading) return;
-
         messageInput.value = '';
         sendBtn.disabled = true;
         messageInput.style.height = 'auto';
-
         appendMessage('user', text);
         showTyping();
-
-        const reply = await sendMessage(currentConversationId, text);
-
+        const reply = await sendMessage(currentConversationId, text, selectedModelId);
         removeTyping();
         appendMessage('assistant', reply);
-
         await loadConversations();
-        const conv = conversations.find(c => c.id === currentConversationId);
-        if (conv) {
-            chatTitle.textContent = conv.title;
-        }
+        const conv = conversations.find((c) => c.id === currentConversationId);
+        if (conv) chatTitle.textContent = conv.title;
         renderConversationList(searchInput ? searchInput.value : '');
     }
 
-    // ===== User menu =====
+    // ===== Dropdowns =====
+    function closeAllDropdowns() {
+        [taskPlusMenu, taskModelMenu, workspaceMenu, permissionMenu].forEach((el) => {
+            if (el) el.hidden = true;
+        });
+        [taskPlusBtn, taskModelBtn, workspaceBtn, permissionBtn].forEach((el) => {
+            if (el) el.classList.remove('open');
+        });
+    }
+
+    function toggleDropdown(btn, menu) {
+        const willOpen = menu.hidden;
+        closeAllDropdowns();
+        if (willOpen) {
+            menu.hidden = false;
+            btn.classList.add('open');
+        }
+    }
+
+    function updateWorkspaceLabel() {
+        if (!workspaceLabel) return;
+        workspaceLabel.textContent = workspaceMode === 'none'
+            ? t('task.ws_none')
+            : t('task.ws_select');
+    }
+
+    function updatePermissionLabel() {
+        if (!permissionLabel) return;
+        permissionLabel.textContent = permissionMode === 'full'
+            ? t('task.perm_full')
+            : t('task.perm_default');
+    }
+
+    // ===== User menu / settings =====
     function openUserMenu() {
         userMenu.hidden = false;
         userBar.classList.add('open');
         userBar.setAttribute('aria-expanded', 'true');
     }
-
     function closeUserMenu() {
         userMenu.hidden = true;
         userBar.classList.remove('open');
@@ -428,7 +634,6 @@
         const submenu = userMenu.querySelector('.has-submenu');
         if (submenu) submenu.classList.remove('open');
     }
-
     function toggleUserMenu() {
         if (userMenu.hidden) openUserMenu();
         else closeUserMenu();
@@ -439,12 +644,34 @@
             const data = await api('/api/open-home', { method: 'POST' });
             showToast(data.path ? `${t('sidebar.open_home')}: ${data.path}` : t('sidebar.open_home_ok'));
         } catch (e) {
-            console.error(e);
             showToast(e.message || t('sidebar.open_home_failed'), true);
         }
     }
 
-    async function loadSettings() {
+    function showSettingsTab(tab) {
+        settingsTab = tab;
+        document.querySelectorAll('.settings-nav-item').forEach((el) => {
+            el.classList.toggle('active', el.dataset.settingsTab === tab);
+        });
+        const map = {
+            system: 'settings-panel-system',
+            memory: 'settings-panel-memory',
+            models: 'settings-panel-models',
+            'model-edit': 'settings-panel-model-edit',
+        };
+        Object.entries(map).forEach(([key, id]) => {
+            const panel = $(id);
+            if (panel) panel.hidden = key !== tab;
+        });
+        // 导航高亮：编辑页时仍高亮模型
+        if (tab === 'model-edit') {
+            document.querySelectorAll('.settings-nav-item').forEach((el) => {
+                el.classList.toggle('active', el.dataset.settingsTab === 'models');
+            });
+        }
+    }
+
+    async function loadSettingsSummary() {
         try {
             const data = await api('/api/config');
             if (settingsModel) settingsModel.textContent = data.model_name || '-';
@@ -456,37 +683,219 @@
         updateThemeLabels();
     }
 
-    function openSettings() {
+    function openSettings(tab = 'system') {
         closeUserMenu();
         settingsModal.hidden = false;
-        loadSettings();
+        showSettingsTab(tab);
+        loadSettingsSummary();
+        if (tab === 'models' || tab === 'model-edit') loadModels();
     }
 
     function closeSettings() {
         settingsModal.hidden = true;
+        editingModelId = null;
     }
 
-    // ===== Event Listeners =====
-    if (newTaskBtn) {
-        newTaskBtn.addEventListener('click', () => {
-            setView('chat');
-            createConversation();
+    function openModelEdit(modelUid) {
+        editingModelId = modelUid || null;
+        showSettingsTab('model-edit');
+        const title = $('model-edit-title');
+        const delBtn = $('model-edit-delete');
+        if (title) title.textContent = modelUid ? t('settings.edit_model') : t('settings.add_model');
+        if (delBtn) delBtn.hidden = !modelUid;
+        $('model-edit-id').value = modelUid || '';
+        $('model-edit-name').value = '';
+        $('model-edit-endpoint').value = '';
+        $('model-edit-key').value = '';
+        $('model-edit-key').placeholder = modelUid ? t('settings.key_keep') : '';
+        $('model-edit-modelid').value = '';
+        $('model-edit-default').checked = false;
+
+        if (!modelUid) return;
+        const m = models.find((x) => x.id === modelUid);
+        if (m) {
+            $('model-edit-name').value = m.name || '';
+            $('model-edit-endpoint').value = m.api_endpoint || '';
+            $('model-edit-modelid').value = m.model_id || '';
+            $('model-edit-default').checked = !!m.is_default;
+            if (m.has_api_key) $('model-edit-key').placeholder = t('settings.key_keep');
+        }
+    }
+
+    async function saveModelForm(e) {
+        e.preventDefault();
+        const id = $('model-edit-id').value;
+        const payload = {
+            name: $('model-edit-name').value.trim(),
+            api_endpoint: $('model-edit-endpoint').value.trim(),
+            model_id: $('model-edit-modelid').value.trim(),
+            set_default: $('model-edit-default').checked,
+        };
+        const key = $('model-edit-key').value;
+        if (key) payload.api_key = key;
+        if (!payload.api_endpoint || !payload.model_id) {
+            showToast(t('settings.required_fields'), true);
+            return;
+        }
+        try {
+            if (id) {
+                await api(`/api/models/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+            } else {
+                if (!payload.api_key) payload.api_key = '';
+                await api('/api/models', { method: 'POST', body: JSON.stringify(payload) });
+            }
+            showToast(t('settings.saved'));
+            await loadModels();
+            await loadSettingsSummary();
+            showSettingsTab('models');
+        } catch (err) {
+            showToast(err.message, true);
+        }
+    }
+
+    async function deleteCurrentModel() {
+        const id = $('model-edit-id').value;
+        if (!id) return;
+        if (!confirm(t('settings.confirm_delete_model'))) return;
+        try {
+            await api(`/api/models/${id}`, { method: 'DELETE' });
+            if (selectedModelId === id) {
+                selectedModelId = null;
+                localStorage.removeItem('maxagent-model-id');
+            }
+            await loadModels();
+            showSettingsTab('models');
+            showToast(t('settings.deleted'));
+        } catch (err) {
+            showToast(err.message, true);
+        }
+    }
+
+    // ===== Events =====
+    if (newTaskBtn) newTaskBtn.addEventListener('click', () => { closeUserMenu(); openNewTaskPage(); });
+    if (welcomeNewTaskBtn) welcomeNewTaskBtn.addEventListener('click', () => openNewTaskPage());
+    if (closeNewTaskBtn) closeNewTaskBtn.addEventListener('click', () => closeNewTaskPage());
+
+    if (taskInput) {
+        taskInput.addEventListener('input', () => {
+            taskInput.style.height = 'auto';
+            taskInput.style.height = Math.min(taskInput.scrollHeight, 280) + 'px';
+            updateTaskSendState();
+        });
+        taskInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                submitNewTask();
+            }
+        });
+    }
+    if (taskSendBtn) taskSendBtn.addEventListener('click', () => submitNewTask());
+
+    // capability chips
+    document.querySelectorAll('.capability-chip[data-prompt]').forEach((chip) => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.capability-chip').forEach((c) => c.classList.remove('active'));
+            chip.classList.add('active');
+            const prompt = chip.dataset.prompt || '';
+            if (taskInput) {
+                if (!taskInput.value.trim()) taskInput.value = prompt;
+                else if (!taskInput.value.includes(prompt.trim())) {
+                    taskInput.value = prompt + taskInput.value;
+                }
+                taskInput.focus();
+                updateTaskSendState();
+            }
+        });
+    });
+    const moreBtn = $('capability-more-btn');
+    if (moreBtn) {
+        moreBtn.addEventListener('click', () => showToast(t('task.more_todo')));
+    }
+
+    // plus menu
+    if (taskPlusBtn && taskPlusMenu) {
+        taskPlusBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleDropdown(taskPlusBtn, taskPlusMenu);
+        });
+        taskPlusMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = e.target.closest('[data-plus]');
+            if (!item) return;
+            const action = item.dataset.plus;
+            closeAllDropdowns();
+            if (action === 'file') {
+                if (taskFileInput) taskFileInput.click();
+            } else if (action === 'ref') {
+                showToast(t('task.ref_todo'));
+            } else if (action === 'skill') {
+                setView('skills');
+            } else if (action === 'mcp') {
+                showToast(t('task.mcp_todo'));
+            }
+        });
+    }
+    if (taskFileInput) {
+        taskFileInput.addEventListener('change', () => {
+            addFilesToAttachments(taskFileInput.files);
+            taskFileInput.value = '';
         });
     }
 
-    if (skillsBtn) {
-        skillsBtn.addEventListener('click', () => {
-            setView('skills');
-            closeUserMenu();
+    // model picker
+    if (taskModelBtn && taskModelMenu) {
+        taskModelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renderModelMenu();
+            toggleDropdown(taskModelBtn, taskModelMenu);
+        });
+        taskModelMenu.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    // workspace / permission
+    if (workspaceBtn && workspaceMenu) {
+        workspaceBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleDropdown(workspaceBtn, workspaceMenu);
+        });
+        workspaceMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = e.target.closest('[data-workspace]');
+            if (!item) return;
+            workspaceMode = item.dataset.workspace;
+            localStorage.setItem('maxagent-workspace', workspaceMode);
+            updateWorkspaceLabel();
+            closeAllDropdowns();
+        });
+    }
+    if (permissionBtn && permissionMenu) {
+        permissionBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleDropdown(permissionBtn, permissionMenu);
+        });
+        permissionMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = e.target.closest('[data-permission]');
+            if (!item) return;
+            permissionMode = item.dataset.permission;
+            localStorage.setItem('maxagent-permission', permissionMode);
+            updatePermissionLabel();
+            closeAllDropdowns();
         });
     }
 
-    if (automationBtn) {
-        automationBtn.addEventListener('click', () => {
-            setView('automation');
-            closeUserMenu();
+    if (newTaskPage) {
+        newTaskPage.addEventListener('dragover', (e) => e.preventDefault());
+        newTaskPage.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer && e.dataTransfer.files.length) {
+                addFilesToAttachments(e.dataTransfer.files);
+            }
         });
     }
+
+    if (skillsBtn) skillsBtn.addEventListener('click', () => { setView('skills'); closeUserMenu(); });
+    if (automationBtn) automationBtn.addEventListener('click', () => { setView('automation'); closeUserMenu(); });
 
     if (userBar) {
         userBar.addEventListener('click', (e) => {
@@ -494,23 +903,16 @@
             toggleUserMenu();
         });
     }
-
     if (userMenu) {
         userMenu.addEventListener('click', (e) => {
             e.stopPropagation();
             const item = e.target.closest('[data-action]');
             if (!item) return;
             const action = item.dataset.action;
-
-            if (action === 'settings') {
-                openSettings();
-            } else if (action === 'appearance') {
-                toggleTheme();
-            } else if (action === 'language') {
-                // 点击语言行本身时展开/收起子菜单（点语言选项由下方单独处理）
-                if (!e.target.closest('.lang-option')) {
-                    item.classList.toggle('open');
-                }
+            if (action === 'settings') openSettings('system');
+            else if (action === 'appearance') toggleTheme();
+            else if (action === 'language') {
+                if (!e.target.closest('.lang-option')) item.classList.toggle('open');
             } else if (action === 'open-home') {
                 closeUserMenu();
                 openHomeDir();
@@ -519,8 +921,9 @@
     }
 
     document.addEventListener('click', (e) => {
-        if (!userMenu.hidden && !e.target.closest('.user-bar-wrap')) {
-            closeUserMenu();
+        if (!userMenu.hidden && !e.target.closest('.user-bar-wrap')) closeUserMenu();
+        if (!e.target.closest('.plus-menu-wrap') && !e.target.closest('.model-picker-wrap') && !e.target.closest('.config-dropdown-wrap')) {
+            closeAllDropdowns();
         }
     });
 
@@ -528,6 +931,8 @@
         if (e.key === 'Escape') {
             closeUserMenu();
             closeSettings();
+            closeAllDropdowns();
+            if (currentView === 'new-task') closeNewTaskPage();
         }
     });
 
@@ -544,69 +949,57 @@
         });
     });
 
-    if (settingsThemeBtn) {
-        settingsThemeBtn.addEventListener('click', () => toggleTheme());
-    }
-
+    if (settingsThemeBtn) settingsThemeBtn.addEventListener('click', () => toggleTheme());
     document.querySelectorAll('[data-close-modal]').forEach((el) => {
         el.addEventListener('click', closeSettings);
     });
+    document.querySelectorAll('[data-settings-tab]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.settingsTab;
+            showSettingsTab(tab);
+            if (tab === 'models') loadModels();
+            if (tab === 'system') loadSettingsSummary();
+        });
+    });
+    const modelAddBtn = $('model-add-btn');
+    if (modelAddBtn) modelAddBtn.addEventListener('click', () => openModelEdit(null));
+    const modelEditBack = $('model-edit-back');
+    if (modelEditBack) modelEditBack.addEventListener('click', () => showSettingsTab('models'));
+    const modelEditForm = $('model-edit-form');
+    if (modelEditForm) modelEditForm.addEventListener('submit', saveModelForm);
+    const modelEditDelete = $('model-edit-delete');
+    if (modelEditDelete) modelEditDelete.addEventListener('click', deleteCurrentModel);
+    const openMemoryBtn = $('open-memory-btn');
+    if (openMemoryBtn) openMemoryBtn.addEventListener('click', openHomeDir);
 
     sendBtn.addEventListener('click', handleSend);
-
     messageInput.addEventListener('input', () => {
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
         sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
     });
-
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSend();
         }
     });
-
-    searchInput.addEventListener('input', () => {
-        renderConversationList(searchInput.value);
-    });
-
-    document.querySelectorAll('.suggestion-chip').forEach(chip => {
-        chip.addEventListener('click', async () => {
-            const text = chip.dataset.text;
-            setView('chat');
-            if (!currentConversationId) {
-                await createConversation();
-            }
-            if (currentConversationId) {
-                messageInput.value = text;
-                sendBtn.disabled = false;
-                handleSend();
-            }
-        });
-    });
-
+    searchInput.addEventListener('input', () => renderConversationList(searchInput.value));
     window.addEventListener('language-changed', applyI18n);
 
     // ===== Init =====
     async function init() {
-        // language from localStorage or default
         const savedLang = localStorage.getItem('maxagent-lang');
         if (savedLang) setLang(savedLang);
-
         applyTheme(theme);
         applyI18n();
         setStatus('idle', t('status.ready'));
-        setView('chat');
-
+        updateWorkspaceLabel();
+        updatePermissionLabel();
+        await loadModels();
         await loadConversations();
-
-        if (conversations.length > 0) {
-            await switchToConversation(conversations[0].id);
-        } else {
-            await createConversation();
-        }
+        if (conversations.length > 0) await switchToConversation(conversations[0].id);
+        else showWelcome();
     }
-
     init();
 })();

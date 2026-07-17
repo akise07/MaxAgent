@@ -12,7 +12,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import fun as fun_api
 from app.api import conversations_route
+from app.api import models_route
 from app.api.sessions import SessionManager
+from app.models_store import ModelConfigStore
 from config import Config
 from main import build_agent
 
@@ -24,16 +26,19 @@ app = FastAPI(title="MaxAgent GUI")
 static_dir = os.path.join(os.path.dirname(__file__), "app", "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# 初始化依赖（会话管理 + Agent + 配置）
+# 初始化依赖（会话管理 + Agent + 配置 + 模型列表）
 session_manager = SessionManager()
 agent = build_agent()
 config = Config()
-fun_api.init_dependencies(session_manager, agent, config)
+model_store = ModelConfigStore()
+fun_api.init_dependencies(session_manager, agent, config, model_store)
 conversations_route.init_dependencies(session_manager)
+models_route.init_store(model_store)
 
 # 注册路由
 app.include_router(fun_api.router)
 app.include_router(conversations_route.router)
+app.include_router(models_route.router)
 
 
 @app.get("/")
