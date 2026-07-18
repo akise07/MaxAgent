@@ -78,12 +78,12 @@ class ModelConfigStore:
         """用 .env / 环境变量生成默认模型条目。"""
         return {
             "id": str(uuid.uuid4()),
-            "name": os.getenv("VISIONAGENT_MODEL_NAME", "hy3"),
+            "name": os.getenv("MAXAGENT_MODEL_NAME", "hy3"),
             "api_endpoint": os.getenv(
-                "VISIONAGENT_API_ENDPOINT", "http://localhost:8111/v1"
+                "MAXAGENT_API_ENDPOINT", "http://localhost:8111/v1"
             ),
-            "api_key": os.getenv("VISIONAGENT_API_KEY", ""),
-            "model_id": os.getenv("VISIONAGENT_MODEL_NAME", "hy3"),
+            "api_key": os.getenv("MAXAGENT_API_KEY", ""),
+            "model_id": os.getenv("MAXAGENT_MODEL_NAME", "hy3"),
             "advanced": default_advanced(),
         }
 
