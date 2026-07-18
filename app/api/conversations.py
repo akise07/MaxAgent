@@ -1,8 +1,8 @@
 """会话相关 API 路由封装。"""
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
-from app.api.sessions import SessionManager
+from app.schemas.requests import NewConversationRequest, RenameRequest
+from app.storage.session_store import SessionManager
 
 
 router = APIRouter()
@@ -13,16 +13,6 @@ def init_dependencies(session_manager: SessionManager) -> None:
     """由 app.py 在启动时调用，注入依赖。"""
     global _session_manager
     _session_manager = session_manager
-
-
-# ===== 数据模型 =====
-class NewConversationRequest(BaseModel):
-    title: str = "新对话"
-
-
-class RenameRequest(BaseModel):
-    conversation_id: str
-    title: str
 
 
 # ===== 路由 =====

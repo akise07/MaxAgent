@@ -1,48 +1,10 @@
+"""MaxAgent CLI 入口：终端对话样例。
+
+Agent 业务逻辑已抽至 app.services.agent，此处仅保留样例运行。
+"""
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
-from typing import Annotated, TypedDict
 
-from config import Config
-
-config = Config()
-
-
-class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
-
-
-def create_llm() -> ChatOpenAI:
-    """创建 LLM 实例"""
-    return ChatOpenAI(
-        model=config.MODEL_NAME,
-        api_key=config.API_KEY,
-        base_url=config.API_ENDPOINT,
-    )
-
-
-def call_model(state: AgentState) -> dict:
-    """调用 LLM 生成回复"""
-    llm = create_llm()
-    response = llm.invoke(state["messages"])
-    return {"messages": [response]}
-
-
-def should_continue(state: AgentState) -> str:
-    """判断是否继续循环（简单实现：始终结束）"""
-    return END
-
-
-def build_agent() -> StateGraph:
-    """构建 Agent 图"""
-    graph = StateGraph(AgentState)
-
-    graph.add_node("agent", call_model)
-    graph.set_entry_point("agent")
-    graph.add_edge("agent", END)
-
-    return graph.compile()
+from app.services.agent import build_agent
 
 
 def main():

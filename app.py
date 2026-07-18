@@ -10,13 +10,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import fun as fun_api
-from app.api import conversations_route
-from app.api import models_route
-from app.api.sessions import SessionManager
-from app.models_store import ModelConfigStore
-from config import Config
-from main import build_agent
+from app.api import chat as chat_api
+from app.api import conversations
+from app.api import models as models_api
+from app.config.settings import Config
+from app.services.agent import build_agent
+from app.storage.models import ModelConfigStore
+from app.storage.session_store import SessionManager
 
 
 # ===== FastAPI 应用 =====
@@ -31,14 +31,14 @@ session_manager = SessionManager()
 agent = build_agent()
 config = Config()
 model_store = ModelConfigStore()
-fun_api.init_dependencies(session_manager, agent, config, model_store)
-conversations_route.init_dependencies(session_manager)
-models_route.init_store(model_store)
+chat_api.init_dependencies(session_manager, agent, config, model_store)
+conversations.init_dependencies(session_manager)
+models_api.init_store(model_store)
 
 # 注册路由
-app.include_router(fun_api.router)
-app.include_router(conversations_route.router)
-app.include_router(models_route.router)
+app.include_router(chat_api.router)
+app.include_router(conversations.router)
+app.include_router(models_api.router)
 
 
 @app.get("/")

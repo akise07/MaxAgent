@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 
-from app.config.model import AdvancedConfig
-from app.models_store import ModelConfigStore
+from app.schemas.requests import ModelCreateRequest, ModelUpdateRequest
+from app.storage.models import ModelConfigStore
 
 router = APIRouter()
 _store: ModelConfigStore | None = None
@@ -20,26 +19,6 @@ def get_store() -> ModelConfigStore:
     if _store is None:
         raise HTTPException(status_code=500, detail="模型配置未初始化")
     return _store
-
-
-class ModelCreateRequest(BaseModel):
-    name: str = ""
-    api_endpoint: str
-    api_key: str = ""
-    model_id: str
-    set_default: bool = False
-    advanced: AdvancedConfig | None = None
-
-
-class ModelUpdateRequest(BaseModel):
-    name: str | None = None
-    api_endpoint: str | None = None
-    api_key: str | None = Field(
-        default=None, description="留空或不传表示不修改密钥"
-    )
-    model_id: str | None = None
-    set_default: bool | None = None
-    advanced: AdvancedConfig | None = None
 
 
 @router.get("/api/models")

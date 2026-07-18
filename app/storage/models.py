@@ -11,19 +11,11 @@ from typing import Any
 from app.config.model import THINKING_LEVELS, default_advanced
 
 
-def _default_advanced() -> dict[str, Any]:
-    """模型高级配置的默认结构（与 UI 字段一一对应）。"""
-    return {
-        "tool_calling": False,
-        "image_input": False,
-        "thinking_mode": False,
-        "thinking_only": False,
-        "allow_disable_thinking": False,
-        "default_thinking_intensity": "高",
-        "supported_thinking_intensities": ["高"],
-        "context_input": 0,
-        "context_output": 0,
-    }
+def _mask_key(key: str) -> str:
+    """密钥脱敏：前 4 + 后 2 截断，中间用 **** 占位。短密钥统一返回 ****。"""
+    if len(key) > 6:
+        return key[:4] + "****" + key[-2:]
+    return "****"
 
 
 class ModelConfigStore:
@@ -69,7 +61,8 @@ class ModelConfigStore:
         return out
 
     def __init__(self, config_path: Path | None = None) -> None:
-        project_root = Path(__file__).resolve().parents[1]
+        # app/storage/models.py → parents[2] = 项目根 MaxAgent/
+        project_root = Path(__file__).resolve().parents[2]
         home = project_root / "home"
         self._path = config_path or (home / "config" / "models.json")
         self._lock = threading.Lock()
@@ -124,10 +117,7 @@ class ModelConfigStore:
                 if mask_key:
                     item = dict(m)
                     if item.get("api_key"):
-                        key = item["api_key"]
-                        item["api_key_masked"] = (
-                            key[:4] + "****" + key[-2:] if len(key) > 6 else "****"
-                        )
+                        item["api_key_masked"] = _mask_key(item["api_key"])
                         item["has_api_key"] = True
                         del item["api_key"]
                     else:
