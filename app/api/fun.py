@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from config import Config
 from main import build_agent
 from app.api.sessions import SessionManager
+from app.config.model import INTENSITY_TO_REASONING_EFFORT
 from app.models_store import ModelConfigStore
 
 
@@ -27,6 +28,28 @@ _model_store: ModelConfigStore | None = None
 # 项目根目录 / home 目录
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _HOME_DIR = _PROJECT_ROOT / "home"
+
+
+def _build_thinking_kwargs(advanced: dict | None) -> tuple[str | None, dict]:
+    """根据模型的 advanced 配置，构造透传给 LLM 的参数。
+
+    返回 (reasoning_effort, model_kwargs)：
+    - reasoning_effort：OpenAI 顶层参数，值为 low/medium/high（None 表示不设置）
+    - model_kwargs：传给底层的额外参数，例如 Qwen 风格的 chat_template_kwargs
+
+    - thinking_mode 开启：把 default_thinking_intensity 映射为 reasoning_effort
+      （低→low, 中→medium, 高/超高/极致→high）
+    - thinking_only / allow_disable_thinking 开启：同时设置
+      chat_template_kwargs.enable_thinking=True（Qwen 风格，常规 API 忽略）
+    """
+    if not advanced or not advanced.get("thinking_mode"):
+        return None, {}
+    intensity = advanced.get("default_thinking_intensity") or "高"
+    effort = INTENSITY_TO_REASONING_EFFORT.get(intensity, "high")
+    model_kwargs: dict = {}
+    if advanced.get("thinking_only") or advanced.get("allow_disable_thinking"):
+        model_kwargs["chat_template_kwargs"] = {"enable_thinking": True}
+    return effort, model_kwargs
 
 
 def init_dependencies(
@@ -48,6 +71,10 @@ class ChatRequest(BaseModel):
     conversation_id: str
     message: str
     model_id: str | None = None  # 可选：指定使用的已配置模型 uid
+    # 可选：覆盖模型默认思考强度（必须仍在 supported_thinking_intensities 内）
+    thinking_intensity: str | None = None
+    # 可选：本次消息是否启用思考模式；None 表示遵循模型默认
+    thinking_enabled: bool | None = None
 
 
 def _resolve_llm_config(model_uid: str | None = None) -> dict:
@@ -63,6 +90,7 @@ def _resolve_llm_config(model_uid: str | None = None) -> dict:
                 "model": model.get("model_id") or model.get("name") or "hy3",
                 "api_key": model.get("api_key") or "EMPTY",
                 "base_url": model.get("api_endpoint") or "",
+                "advanced": model.get("advanced") or {},
             }
     if _config is None:
         raise HTTPException(status_code=500, detail="配置未初始化")
@@ -70,6 +98,7 @@ def _resolve_llm_config(model_uid: str | None = None) -> dict:
         "model": _config.MODEL_NAME,
         "api_key": _config.API_KEY or "EMPTY",
         "base_url": _config.API_ENDPOINT,
+        "advanced": {},
     }
 
 
@@ -146,11 +175,23 @@ async def chat(req: ChatRequest):
         ]
         # 优先按请求指定模型 / 默认模型即时调用
         llm_cfg = _resolve_llm_config(req.model_id)
-        llm = ChatOpenAI(
-            model=llm_cfg["model"],
-            api_key=llm_cfg["api_key"],
-            base_url=llm_cfg["base_url"],
-        )
+        # 合并：模型默认 + 本次请求的覆盖
+        advanced_cfg = dict(llm_cfg.get("advanced") or {})
+        if req.thinking_enabled is not None:
+            advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
+        if req.thinking_intensity:
+            advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
+        reasoning_effort, model_kwargs = _build_thinking_kwargs(advanced_cfg)
+        llm_kwargs: dict = {
+            "model": llm_cfg["model"],
+            "api_key": llm_cfg["api_key"],
+            "base_url": llm_cfg["base_url"],
+        }
+        if reasoning_effort is not None:
+            llm_kwargs["reasoning_effort"] = reasoning_effort
+        if model_kwargs:
+            llm_kwargs["model_kwargs"] = model_kwargs
+        llm = ChatOpenAI(**llm_kwargs)
         response = llm.invoke(messages)
         reply = getattr(response, "content", None) or ""
         if not reply and _agent is not None:

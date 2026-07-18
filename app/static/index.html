@@ -427,6 +427,61 @@
                             <input type="checkbox" id="model-edit-default">
                             <span data-i18n="settings.set_default">设为默认模型</span>
                         </label>
+                        <fieldset class="advanced-section">
+                            <legend data-i18n="settings.advanced">高级配置</legend>
+                            <div class="advanced-grid">
+                                <label class="form-check">
+                                    <input type="checkbox" id="model-adv-tool">
+                                    <span data-i18n="settings.adv_tool">工具调用</span>
+                                </label>
+                                <label class="form-check">
+                                    <input type="checkbox" id="model-adv-image">
+                                    <span data-i18n="settings.adv_image">图片输入</span>
+                                </label>
+                                <label class="form-check">
+                                    <input type="checkbox" id="model-adv-thinking">
+                                    <span data-i18n="settings.adv_thinking">思考模式</span>
+                                </label>
+                                <label class="form-check">
+                                    <input type="checkbox" id="model-adv-thinking-only">
+                                    <span data-i18n="settings.adv_thinking_only">仅思考模式</span>
+                                </label>
+                                <label class="form-check">
+                                    <input type="checkbox" id="model-adv-allow-disable">
+                                    <span data-i18n="settings.adv_allow_disable">允许关闭思考</span>
+                                </label>
+                            </div>
+                            <label class="form-field" id="model-adv-intensity-group">
+                                <span data-i18n="settings.adv_default_intensity">默认思考强度</span>
+                                <select id="model-adv-default-intensity"></select>
+                            </label>
+                            <div class="form-field" id="model-adv-supported-group">
+                                <span data-i18n="settings.adv_supported_intensity">支持的思考强度</span>
+                                <div class="check-row check-row-5" id="model-adv-supported-wrap"></div>
+                            </div>
+                            <div class="form-row">
+                                <label class="form-field">
+                                    <span data-i18n="settings.adv_input">输入</span>
+                                    <input type="number" min="0" step="1" id="model-adv-input" placeholder="500000" autocomplete="off">
+                                    <div class="quick-values" data-target="model-adv-input" data-multiplier="1024">
+                                        <button type="button" data-val="32">32K</button>
+                                        <button type="button" data-val="64">64K</button>
+                                        <button type="button" data-val="128">128K</button>
+                                        <button type="button" data-val="256">256K</button>
+                                    </div>
+                                </label>
+                                <label class="form-field">
+                                    <span data-i18n="settings.adv_output">输出</span>
+                                    <input type="number" min="0" step="1" id="model-adv-output" placeholder="64000" autocomplete="off">
+                                    <div class="quick-values" data-target="model-adv-output" data-multiplier="1024">
+                                        <button type="button" data-val="8">8K</button>
+                                        <button type="button" data-val="16">16K</button>
+                                        <button type="button" data-val="32">32K</button>
+                                        <button type="button" data-val="64">64K</button>
+                                    </div>
+                                </label>
+                            </div>
+                        </fieldset>
                         <div class="form-actions">
                             <button type="button" id="model-edit-delete" class="btn-danger" hidden data-i18n="settings.delete">删除</button>
                             <button type="submit" class="btn-primary-sm" data-i18n="settings.save">保存</button>

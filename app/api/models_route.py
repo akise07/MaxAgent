@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.config.model import AdvancedConfig
 from app.models_store import ModelConfigStore
 
 router = APIRouter()
@@ -27,6 +28,7 @@ class ModelCreateRequest(BaseModel):
     api_key: str = ""
     model_id: str
     set_default: bool = False
+    advanced: AdvancedConfig | None = None
 
 
 class ModelUpdateRequest(BaseModel):
@@ -37,6 +39,7 @@ class ModelUpdateRequest(BaseModel):
     )
     model_id: str | None = None
     set_default: bool | None = None
+    advanced: AdvancedConfig | None = None
 
 
 @router.get("/api/models")
@@ -72,6 +75,7 @@ async def create_model(req: ModelCreateRequest):
         api_key=req.api_key,
         model_id=req.model_id,
         set_default=req.set_default,
+        advanced=req.advanced.model_dump() if req.advanced else None,
     )
     return item
 
@@ -86,6 +90,7 @@ async def update_model(model_uid: str, req: ModelUpdateRequest):
         api_key=req.api_key,
         model_id=req.model_id,
         set_default=req.set_default,
+        advanced=req.advanced.model_dump() if req.advanced else None,
     )
     if not item:
         raise HTTPException(status_code=404, detail="模型不存在")

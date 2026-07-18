@@ -693,6 +693,114 @@
         editingModelId = null;
     }
 
+    // 模型高级配置：与后端字段一一对应；档位顺序与 UI 渲染强绑定
+    const THINKING_LEVELS = ['低', '中', '高', '超高', '极致'];
+    const ADV_FIELDS = [
+        'model-adv-tool',
+        'model-adv-image',
+        'model-adv-thinking',
+        'model-adv-thinking-only',
+        'model-adv-allow-disable',
+    ];
+
+    function resetAdvancedForm() {
+        ADV_FIELDS.forEach((id) => {
+            const el = $(id);
+            if (el) el.checked = false;
+        });
+        // 渲染默认思考强度下拉
+        const sel = $('model-adv-default-intensity');
+        if (sel) {
+            sel.innerHTML = THINKING_LEVELS.map(
+                (lv) => `<option value="${lv}">${lv}</option>`
+            ).join('');
+            sel.value = '高';
+        }
+        // 渲染支持的思考强度（单选 radio）
+        const wrap = $('model-adv-supported-wrap');
+        if (wrap) {
+            wrap.innerHTML = THINKING_LEVELS.map(
+                (lv) => `<label class="form-check"><input type="radio" name="model-adv-supported" value="${lv}"><span>${lv}</span></label>`
+            ).join('');
+            // 默认选中第一项
+            const first = wrap.querySelector('input[type=radio]');
+            if (first) first.checked = true;
+        }
+        const inEl = $('model-adv-input');
+        const outEl = $('model-adv-output');
+        if (inEl) inEl.value = '';
+        if (outEl) outEl.value = '';
+        syncThinkingVisibility();
+    }
+
+    // "默认/支持的思考强度"两项只在勾选"思考模式"时显示
+    function syncThinkingVisibility() {
+        const thinkingOn = !!$('model-adv-thinking')?.checked;
+        const a = $('model-adv-intensity-group');
+        const b = $('model-adv-supported-group');
+        if (a) a.style.display = thinkingOn ? '' : 'none';
+        if (b) b.style.display = thinkingOn ? '' : 'none';
+    }
+
+    function fillAdvancedForm(adv) {
+        const a = adv || {};
+        const map = {
+            'model-adv-tool': a.tool_calling,
+            'model-adv-image': a.image_input,
+            'model-adv-thinking': a.thinking_mode,
+            'model-adv-thinking-only': a.thinking_only,
+            'model-adv-allow-disable': a.allow_disable_thinking,
+        };
+        Object.keys(map).forEach((id) => {
+            const el = $(id);
+            if (el) el.checked = !!map[id];
+        });
+        const sel = $('model-adv-default-intensity');
+        if (sel) {
+            sel.value = THINKING_LEVELS.includes(a.default_thinking_intensity)
+                ? a.default_thinking_intensity
+                : '高';
+        }
+        const wrap = $('model-adv-supported-wrap');
+        if (wrap) {
+            const supported = Array.isArray(a.supported_thinking_intensities)
+                ? a.supported_thinking_intensities
+                : ['高'];
+            const targetVal = supported.length > 0 ? supported[0] : '高';
+            const radio = wrap.querySelector(`input[type=radio][value="${targetVal}"]`);
+            if (radio) radio.checked = true;
+        }
+        const inEl = $('model-adv-input');
+        const outEl = $('model-adv-output');
+        if (inEl) inEl.value = a.context_input || '';
+        if (outEl) outEl.value = a.context_output || '';
+        syncThinkingVisibility();
+    }
+
+    function readAdvancedForm() {
+        const thinkingOn = !!$('model-adv-thinking')?.checked;
+        let supported = [];
+        if (thinkingOn) {
+            const checked = document.querySelector('#model-adv-supported-wrap input[type=radio]:checked');
+            supported = checked ? [checked.value] : ['高'];
+        }
+        const inEl = $('model-adv-input');
+        const outEl = $('model-adv-output');
+        return {
+            tool_calling: !!$('model-adv-tool')?.checked,
+            image_input: !!$('model-adv-image')?.checked,
+            thinking_mode: thinkingOn,
+            thinking_only: !!$('model-adv-thinking-only')?.checked,
+            allow_disable_thinking: !!$('model-adv-allow-disable')?.checked,
+            default_thinking_intensity: thinkingOn
+                ? ($('model-adv-default-intensity')?.value || '高')
+                : '',
+            supported_thinking_intensities: supported,
+            context_input: Number(inEl?.value || 0),
+            context_output: Number(outEl?.value || 0),
+        };
+    }
+
     function openModelEdit(modelUid) {
         editingModelId = modelUid || null;
         showSettingsTab('model-edit');
@@ -707,6 +815,7 @@
         $('model-edit-key').placeholder = modelUid ? t('settings.key_keep') : '';
         $('model-edit-modelid').value = '';
         $('model-edit-default').checked = false;
+        resetAdvancedForm();
 
         if (!modelUid) return;
         const m = models.find((x) => x.id === modelUid);
@@ -716,6 +825,7 @@
             $('model-edit-modelid').value = m.model_id || '';
             $('model-edit-default').checked = !!m.is_default;
             if (m.has_api_key) $('model-edit-key').placeholder = t('settings.key_keep');
+            fillAdvancedForm(m.advanced);
         }
     }
 
@@ -727,6 +837,7 @@
             api_endpoint: $('model-edit-endpoint').value.trim(),
             model_id: $('model-edit-modelid').value.trim(),
             set_default: $('model-edit-default').checked,
+            advanced: readAdvancedForm(),
         };
         const key = $('model-edit-key').value;
         if (key) payload.api_key = key;
@@ -966,6 +1077,25 @@
     if (modelEditForm) modelEditForm.addEventListener('submit', saveModelForm);
     const modelEditDelete = $('model-edit-delete');
     if (modelEditDelete) modelEditDelete.addEventListener('click', deleteCurrentModel);
+    // 勾选"思考模式"时联动显示/隐藏强度配置
+    const advThinking = $('model-adv-thinking');
+    if (advThinking) advThinking.addEventListener('change', syncThinkingVisibility);
+    // K 快捷值（输入/输出 token 长度）
+    document.querySelectorAll('.quick-values').forEach((box) => {
+        const targetId = box.dataset.target;
+        const mult = Number(box.dataset.multiplier || 1024);
+        const target = targetId ? $(targetId) : null;
+        if (!target) return;
+        box.querySelectorAll('button[data-val]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const v = Number(btn.dataset.val || 0) * mult;
+                target.value = String(v);
+            });
+        });
+    });
+    // 首次加载时把高级配置的"档位选项"渲染好（解决新建模型打开表单时未渲染的问题）
+    resetAdvancedForm();
     const openMemoryBtn = $('open-memory-btn');
     if (openMemoryBtn) openMemoryBtn.addEventListener('click', openHomeDir);
 

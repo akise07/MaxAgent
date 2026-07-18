@@ -5,7 +5,20 @@
       "name": "hy3",
       "api_endpoint": "http://localhost:8111/v1",
       "api_key": "abc123",
-      "model_id": "hy3"
+      "model_id": "hy3",
+      "advanced": {
+        "tool_calling": false,
+        "image_input": false,
+        "thinking_mode": true,
+        "thinking_only": false,
+        "allow_disable_thinking": false,
+        "default_thinking_intensity": "高",
+        "supported_thinking_intensities": [
+          "高"
+        ],
+        "context_input": 131072,
+        "context_output": 32768
+      }
     },
     {
       "id": "7e8d82a5-8054-423a-b2fb-2bd4f350a8bd",
