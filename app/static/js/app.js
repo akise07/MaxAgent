@@ -510,14 +510,11 @@
     }
 
     function buildTaskMessage(text) {
+        // 首条用户消息只保留正文（及附件提示），不把 workspace/permission/model 元数据拼进对话
         const parts = [text.trim()];
         if (taskAttachments.length > 0) {
             parts.push(`[attachments: ${taskAttachments.map((a) => a.name).join(', ')}]`);
         }
-        parts.push(`[workspace: ${workspaceMode}]`);
-        parts.push(`[permission: ${permissionMode}]`);
-        const m = getSelectedModel();
-        if (m) parts.push(`[model: ${m.name || m.model_id}]`);
         return parts.filter(Boolean).join('\n');
     }
 
