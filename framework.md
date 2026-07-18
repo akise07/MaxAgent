@@ -195,7 +195,7 @@ app/api/chat.py: chat()
 - `threading.Lock` 线程安全
 - 启动时按 `mtime` 倒序加载
 
-## 10. 不在本次分层范围
+## 10. 其他资产
 
 - **前端** `app/static/`（index.html / app.js / styles.css / i18n.js）
 - **视觉资产** `weights/`（YOLO 图标检测 + PaddleOCR，未接入主流程）
