@@ -47,9 +47,21 @@ async def index():
 
 
 # ===== 服务器与窗口 =====
+server: uvicorn.Server | None = None
+
+
 def start_server():
     """在后台线程中启动 uvicorn 服务器。"""
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+    global server
+    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="info")
+    server = uvicorn.Server(config)
+    server.run()
+
+
+def stop_server():
+    """窗口关闭后停止 uvicorn，便于进程正常退出。"""
+    if server is not None:
+        server.should_exit = True
 
 
 def wait_for_server(url="http://127.0.0.1:8000", timeout=10):
@@ -75,6 +87,7 @@ def create_window():
         resizable=True,
         text_select=True,
     )
+    window.events.closed += stop_server
     return window
 
 
@@ -86,3 +99,5 @@ if __name__ == "__main__":
     # 创建窗口并启动 GUI 事件循环
     create_window()
     webview.start()
+    # 兜底：事件循环结束后再确保服务器关闭
+    stop_server()
