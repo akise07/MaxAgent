@@ -1132,12 +1132,24 @@
     }
 
     // ===== Hot Reload =====
+    let _reloadVersion = parseInt(localStorage.getItem('maxagent-reload-v') || '0', 10);
+
     function startHotReload() {
         setInterval(async () => {
             try {
                 const res = await fetch('/api/poll-reload');
                 const data = await res.json();
-                if (data.reload) location.reload();
+                if (data.reload) {
+                    _reloadVersion++;
+                    localStorage.setItem('maxagent-reload-v', String(_reloadVersion));
+                    // 加时间戳强制刷新静态资源缓存
+                    const links = document.querySelectorAll('link[rel=stylesheet]');
+                    links.forEach((el) => {
+                        const href = el.getAttribute('href') || '';
+                        el.setAttribute('href', href.replace(/\?v=[^&]*|$/, `?v=${_reloadVersion}`));
+                    });
+                    location.reload();
+                }
             } catch (_) {}
         }, 1000);
     }
