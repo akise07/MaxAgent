@@ -1536,7 +1536,7 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
 
 .input-wrapper {
     display: flex;
-    align-items: flex-end;
+    align-items: stretch;
     gap: 8px;
     background: var(--input-bg);
     border: 1px solid var(--input-border);
@@ -1563,6 +1563,7 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     outline: none;
     max-height: 120px;
     font-family: inherit;
+    align-self: flex-start;
 }
 
 #message-input::placeholder {
@@ -1582,16 +1583,7 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     justify-content: center;
     flex-shrink: 0;
     transition: all 0.2s;
-}
-
-.btn-send:hover:not(:disabled) {
-    background: var(--accent-hover);
-    transform: scale(1.05);
-}
-
-.btn-send:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+    align-self: flex-end;
 }
 
 /* ===== Empty state ===== */

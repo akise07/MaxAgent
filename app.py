@@ -98,6 +98,6 @@ if __name__ == "__main__":
         print("服务器启动超时")
     # 创建窗口并启动 GUI 事件循环
     create_window()
-    webview.start()
+    webview.start(debug=True)
     # 兜底：事件循环结束后再确保服务器关闭
     stop_server()
