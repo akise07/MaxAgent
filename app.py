@@ -138,7 +138,9 @@ def main(debug: bool = False):
         print("服务器启动超时")
     # 创建窗口并启动 GUI 事件循环
     create_window()
-    webview.start(debug=debug)
+    # 设置窗口图标
+    icon_path = os.path.join(os.path.dirname(__file__), "app", "static", "favicon.ico")
+    webview.start(icon=icon_path if os.path.exists(icon_path) else None, debug=debug)
     # 兜底：事件循环结束后再确保服务器关闭
     if debug:
         disable_hot_reload()

@@ -605,6 +605,12 @@ html[data-theme="light"] .nav-item.active {
     z-index: 5;
     pointer-events: none;
     filter: drop-shadow(0 8px 16px rgba(74, 144, 217, 0.28));
+    animation: character-float 3s ease-in-out infinite;
+}
+
+@keyframes character-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
 }
 
 .task-character .character {
