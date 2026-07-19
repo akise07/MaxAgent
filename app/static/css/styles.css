@@ -1412,7 +1412,7 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
 }
 
 .message .bubble {
-    max-width: 75%;
+    /* max-width: 75%; */
 }
 
 @keyframes fadeIn {
@@ -1451,10 +1451,10 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
 }
 
 .message .bubble {
-    padding: 12px 16px;
+    padding: 8px 12px;
     border-radius: 16px;
     font-size: 14px;
-    line-height: 1.6;
+    line-height: 1.5;
     word-break: break-word;
     white-space: pre-wrap;
 }

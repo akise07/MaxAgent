@@ -342,9 +342,9 @@
             messagesEl.innerHTML = `<div class="empty-state">${t('chat.start_chat')}</div>`;
             return;
         }
+        // <div class="avatar">${msg.role === 'user' ? 'U' : 'A'}</div>
         messagesEl.innerHTML = messages.map((msg) => `
             <div class="message ${msg.role}">
-                <div class="avatar">${msg.role === 'user' ? 'U' : 'A'}</div>
                 <div class="bubble">${formatContent(msg.content)}</div>
             </div>
         `).join('');
@@ -354,8 +354,8 @@
     function appendMessage(role, content) {
         const div = document.createElement('div');
         div.className = `message ${role}`;
+        // <div class="avatar">${role === 'user' ? 'U' : 'A'}</div>
         div.innerHTML = `
-            <div class="avatar">${role === 'user' ? 'U' : 'A'}</div>
             <div class="bubble">${formatContent(content)}</div>`;
         messagesEl.appendChild(div);
         scrollToBottom();
