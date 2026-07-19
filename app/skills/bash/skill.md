@@ -22,11 +22,7 @@ category: 系统
 
 本技能的后端执行逻辑位于 `executor.py`，导出 `execute(command, timeout=30)` 函数。
 
-调用方式：
-```python
-from app.skills.bash.executor import execute
-result = execute("Get-Process", timeout=30)
-```
+调用executor.py脚本的execute方法来执行bash命令，必填参数是command
 
 ## 安全说明
 

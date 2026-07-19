@@ -17,7 +17,7 @@ from app.skills import SkillSpec
 _skills: dict[str, SkillSpec] | None = None
 
 
-def _parse_skill_md(filepath: str) -> SkillSpec | None:
+def _parse_skill_md(filepath: str, dir_path: str = "") -> SkillSpec | None:
     """解析 skill.md 文件，返回 SkillSpec。"""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -67,6 +67,7 @@ def _parse_skill_md(filepath: str) -> SkillSpec | None:
         category=category,
         when_to_use=when_to_use,
         parameters=parameters,
+        dir_path=dir_path,
     )
 
 
@@ -189,7 +190,7 @@ def _discover_skills() -> dict[str, SkillSpec]:
         md_path = os.path.join(entry_path, "skill.md")
         if not os.path.exists(md_path):
             continue
-        spec = _parse_skill_md(md_path)
+        spec = _parse_skill_md(md_path, dir_path=entry_path)
         if spec is not None:
             found[spec.name] = spec
 

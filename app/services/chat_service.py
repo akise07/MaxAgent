@@ -11,7 +11,7 @@ Tool Calling 流程：
 """
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import json
 import os
 import re
@@ -88,22 +88,28 @@ def _read_skill_md(skill_name: str) -> str:
 def _execute_tool(tool_name: str, arguments: dict) -> str:
     """执行工具调用，返回结果文本。
 
-    优先尝试导入 app.skills.{tool_name}.execute() 作为执行器，
-    如果不存在则回退到读取 skill.md 返回文档内容。
+    通过技能目录下的 executor.py 动态导入执行器，
+    不依赖项目包名（app.skills），技能脚本与项目完全隔离。
+    如果 executor.py 不存在则回退到读取 skill.md 返回文档内容。
     """
     skill = get_skill(tool_name)
     if skill is None:
         return f"未知工具：{tool_name}"
 
-    # 尝试动态导入技能模块中的 executor.execute 函数
-    try:
-        mod = importlib.import_module(f"app.skills.{tool_name}.executor")
-        if hasattr(mod, "execute"):
-            return mod.execute(**arguments)
-    except (ImportError, AttributeError):
-        pass
-    except Exception as e:
-        return f"工具 {tool_name} 执行失败：{str(e)}"
+    # 通过技能目录绝对路径动态导入 executor.py
+    executor_path = os.path.join(skill.dir_path, "executor.py")
+    if os.path.isfile(executor_path):
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"{tool_name}.executor", executor_path
+            )
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "execute"):
+                    return mod.execute(**arguments)
+        except Exception as e:
+            return f"工具 {tool_name} 执行失败：{str(e)}"
 
     # 回退：读取 skill.md 内容返回
     try:

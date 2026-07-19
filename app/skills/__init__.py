@@ -13,3 +13,4 @@ class SkillSpec:
     category: str = "通用"
     when_to_use: str = ""
     parameters: dict = field(default_factory=dict)
+    dir_path: str = ""  # 技能目录绝对路径，用于动态导入执行器

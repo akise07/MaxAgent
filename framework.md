@@ -214,6 +214,8 @@ LLM 返回的 tool_calls 示例：
 
 后端执行：
   → _execute_tool("web_search", {"query": "今天天气"})
+  → 通过 skill.dir_path 定位技能目录，用 importlib.util.spec_from_file_location
+    从绝对路径加载 executor.py（不依赖 app.skills 包名）
   → ToolMessage(content="...", tool_call_id="call_xxx")
   → 追加到 messages 列表
   → 第二轮 llm.invoke(messages) 生成最终回复
