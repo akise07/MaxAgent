@@ -8,28 +8,29 @@ from __future__ import annotations
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from app.config.model import INTENSITY_TO_REASONING_EFFORT
+from app.config.model import THINKING_LEVELS
+from app.config.prompts import get_system_prompt
 from app.config.settings import Config
 from app.storage.models import ModelConfigStore
 from app.storage.session_store import SessionManager
+from app.schemas.requests import ChatRequest
 
 
 def build_thinking_kwargs(advanced: dict | None) -> tuple[str | None, dict]:
     """根据模型的 advanced 配置，构造透传给 LLM 的参数。
 
     返回 (reasoning_effort, model_kwargs)：
-    - reasoning_effort：OpenAI 顶层参数，值为 low/medium/high（None 表示不设置）
+    - reasoning_effort：OpenAI 顶层参数，值为 high / None（None 表示不设置）
     - model_kwargs：传给底层的额外参数，例如 Qwen 风格的 chat_template_kwargs
 
-    - thinking_mode 开启：把 default_thinking_intensity 映射为 reasoning_effort
-      （低→low, 中→medium, 高/超高/极致→high）
+    - thinking_mode 开启：把 default_thinking_intensity 直接作为 reasoning_effort
     - thinking_only / allow_disable_thinking 开启：同时设置
       chat_template_kwargs.enable_thinking=True（Qwen 风格，常规 API 忽略）
     """
     if not advanced or not advanced.get("thinking_mode"):
         return None, {}
-    intensity = advanced.get("default_thinking_intensity") or "高"
-    effort = INTENSITY_TO_REASONING_EFFORT.get(intensity, "high")
+    intensity = advanced.get("default_thinking_intensity") or "high"
+    effort = intensity if intensity in THINKING_LEVELS else "high"
     model_kwargs: dict = {}
     if advanced.get("thinking_only") or advanced.get("allow_disable_thinking"):
         model_kwargs["chat_template_kwargs"] = {"enable_thinking": True}
@@ -64,7 +65,7 @@ def resolve_llm_config(
 
 
 def run_chat(
-    req,
+    req: ChatRequest,
     session_manager: SessionManager,
     agent,
     model_store: ModelConfigStore | None,
@@ -85,7 +86,7 @@ def run_chat(
 
     try:
         messages = [
-            SystemMessage(content="你是一个有帮助的AI助手。请用中文回答。"),
+            SystemMessage(content=get_system_prompt()),
             HumanMessage(content=req.message),
         ]
         # 优先按请求指定模型 / 默认模型即时调用

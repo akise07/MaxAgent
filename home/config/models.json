@@ -12,9 +12,9 @@
         "thinking_mode": true,
         "thinking_only": false,
         "allow_disable_thinking": false,
-        "default_thinking_intensity": "高",
+        "default_thinking_intensity": "high",
         "supported_thinking_intensities": [
-          "高"
+          "high"
         ],
         "context_input": 131072,
         "context_output": 32768

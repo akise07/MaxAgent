@@ -694,7 +694,7 @@
     }
 
     // 模型高级配置：与后端字段一一对应；档位顺序与 UI 渲染强绑定
-    const THINKING_LEVELS = ['低', '中', '高', '超高', '极致'];
+    const THINKING_LEVELS = ['high', 'max'];
     const ADV_FIELDS = [
         'model-adv-tool',
         'model-adv-image',
@@ -714,7 +714,7 @@
             sel.innerHTML = THINKING_LEVELS.map(
                 (lv) => `<option value="${lv}">${lv}</option>`
             ).join('');
-            sel.value = '高';
+            sel.value = 'high';
         }
         // 渲染支持的思考强度（单选 radio）
         const wrap = $('model-adv-supported-wrap');
@@ -759,14 +759,14 @@
         if (sel) {
             sel.value = THINKING_LEVELS.includes(a.default_thinking_intensity)
                 ? a.default_thinking_intensity
-                : '高';
+                : 'high';
         }
         const wrap = $('model-adv-supported-wrap');
         if (wrap) {
             const supported = Array.isArray(a.supported_thinking_intensities)
                 ? a.supported_thinking_intensities
-                : ['高'];
-            const targetVal = supported.length > 0 ? supported[0] : '高';
+                : ['high'];
+            const targetVal = supported.length > 0 ? supported[0] : 'high';
             const radio = wrap.querySelector(`input[type=radio][value="${targetVal}"]`);
             if (radio) radio.checked = true;
         }
@@ -782,7 +782,7 @@
         let supported = [];
         if (thinkingOn) {
             const checked = document.querySelector('#model-adv-supported-wrap input[type=radio]:checked');
-            supported = checked ? [checked.value] : ['高'];
+            supported = checked ? [checked.value] : ['high'];
         }
         const inEl = $('model-adv-input');
         const outEl = $('model-adv-output');
@@ -793,7 +793,7 @@
             thinking_only: !!$('model-adv-thinking-only')?.checked,
             allow_disable_thinking: !!$('model-adv-allow-disable')?.checked,
             default_thinking_intensity: thinkingOn
-                ? ($('model-adv-default-intensity')?.value || '高')
+                ? ($('model-adv-default-intensity')?.value || 'high')
                 : '',
             supported_thinking_intensities: supported,
             context_input: Number(inEl?.value || 0),

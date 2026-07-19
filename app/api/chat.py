@@ -22,9 +22,13 @@ router = APIRouter()
 
 # 全局对象（由 app.py 启动时注入）
 _session_manager: SessionManager | None = None
-_agent = None
+"""会话管理器"""
+_agent = None 
+"""聊天代理"""
 _config: Config | None = None
+"""配置"""
 _model_store: ModelConfigStore | None = None
+"""模型配置存储"""
 
 # 项目根目录 / home 目录
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]

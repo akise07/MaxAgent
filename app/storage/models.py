@@ -33,10 +33,10 @@ class ModelConfigStore:
         supported = base.get("supported_thinking_intensities") or []
         supported = [s for s in supported if s in THINKING_LEVELS]
         if not supported:
-            supported = ["高"]
+            supported = ["high"]
         base["supported_thinking_intensities"] = list(dict.fromkeys(supported))
         if base.get("default_thinking_intensity") not in THINKING_LEVELS:
-            base["default_thinking_intensity"] = "高"
+            base["default_thinking_intensity"] = "high"
         # 数值字段兜底
         try:
             base["context_input"] = int(base.get("context_input") or 0)

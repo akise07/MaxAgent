@@ -1,4 +1,4 @@
-"""模型配置参数模板：数据类、常量与默认值工厂。
+"""模型配置参数模板：数据类、枚举常量与默认值工厂。
 
 集中存放与模型参数结构相关的 Pydantic 数据类、枚举常量与工厂函数，
 供 API / 存储层 / 运行时调用方共享引用。
@@ -12,20 +12,21 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 from pydantic import BaseModel, Field
 
-# ===== 思考强度档位（与 UI 强绑定，前端按此顺序渲染） =====
-THINKING_LEVELS: list[str] = ["低", "中", "高", "超高", "极致"]
+
+# ===== 思考强度枚举 =====
+class ThinkingIntensity(str, Enum):
+    """思考强度档位。"""
+
+    HIGH = "high"
+    MAX = "max"
 
 
-# ===== 思考强度中文 → OpenAI reasoning_effort 映射 =====
-INTENSITY_TO_REASONING_EFFORT: dict[str, str] = {
-    "低": "low",
-    "中": "medium",
-    "高": "high",
-    "超高": "high",
-    "极致": "high",
-}
+# 前端渲染顺序（与 UI 强绑定）
+THINKING_LEVELS: list[str] = [e.value for e in ThinkingIntensity]
 
 
 # ===== 高级配置 Pydantic 模型 =====
@@ -37,8 +38,10 @@ class AdvancedConfig(BaseModel):
     thinking_mode: bool = False
     thinking_only: bool = False
     allow_disable_thinking: bool = False
-    default_thinking_intensity: str = "高"
-    supported_thinking_intensities: list[str] = Field(default_factory=lambda: ["高"])
+    default_thinking_intensity: str = ThinkingIntensity.HIGH.value
+    supported_thinking_intensities: list[str] = Field(
+        default_factory=lambda: [ThinkingIntensity.HIGH.value]
+    )
     context_input: int = 0
     context_output: int = 0
 
@@ -52,8 +55,8 @@ def default_advanced() -> dict:
         "thinking_mode": False,
         "thinking_only": False,
         "allow_disable_thinking": False,
-        "default_thinking_intensity": "高",
-        "supported_thinking_intensities": ["高"],
+        "default_thinking_intensity": ThinkingIntensity.HIGH.value,
+        "supported_thinking_intensities": [ThinkingIntensity.HIGH.value],
         "context_input": 0,
         "context_output": 0,
     }

@@ -48,7 +48,8 @@ MaxAgent/
 │   │   └── requests.py            #   5 个请求体模型
 │   ├── config/                    # 配置层
 │   │   ├── settings.py            #   Config（从 .env 读取）
-│   │   └── model.py               #   AdvancedConfig + 思考强度常量
+│   │   ├── model.py               #   AdvancedConfig + 思考强度常量
+│   │   └── prompts.py             #   系统提示词模板
 │   └── static/                    # 前端资源（html/js/css，不在本次分层范围）
 ├── home/                          # 用户数据区（config/memory/skills）
 ├── weights/                       # 视觉模型资产（YOLO/OCR，未接入主流程）
@@ -173,19 +174,11 @@ app/api/chat.py: chat()
        ├─ 首次消息自动生成标题
        ├─ 写入用户消息（session_manager.add_message）
        ├─ resolve_llm_config()  ← 从 model_store 或 config 解析 LLM 参数
-       ├─ build_thinking_kwargs()  ← advanced → reasoning_effort + Qwen enable_thinking
+       ├─ build_thinking_kwargs()  ← advanced → reasoning_effort（直接透传 intensity 值）
        ├─ ChatOpenAI(**kwargs).invoke(messages)  ← 主路径
        ├─ 失败 fallback: agent.invoke()  ← LangGraph 路径
        └─ 写入助手回复（session_manager.add_message）
 ```
-
-### thinking_intensity → reasoning_effort 映射
-
-| 中文档位 | OpenAI reasoning_effort |
-|---------|------------------------|
-| 低 | low |
-| 中 | medium |
-| 高 / 超高 / 极致 | high |
 
 `thinking_only` 或 `allow_disable_thinking` 开启时，额外设置 `chat_template_kwargs.enable_thinking=True`（Qwen 风格，常规 API 忽略）。
 
