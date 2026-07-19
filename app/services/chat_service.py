@@ -5,12 +5,11 @@
 """
 from __future__ import annotations
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.config.model import THINKING_LEVELS
-from app.config.prompts import get_system_prompt
 from app.config.settings import Config
+from app.context.context import build_context
 from app.storage.models import ModelConfigStore
 from app.storage.session_store import SessionManager
 from app.schemas.requests import ChatRequest
@@ -85,10 +84,8 @@ def run_chat(
     session_manager.add_message(req.conversation_id, "user", req.message)
 
     try:
-        messages = [
-            SystemMessage(content=get_system_prompt()),
-            HumanMessage(content=req.message),
-        ]
+        # 构建完整对话上下文（含历史消息）
+        messages = build_context(req.conversation_id, session_manager)
         # 优先按请求指定模型 / 默认模型即时调用
         llm_cfg = resolve_llm_config(model_store, config, req.model_id)
         # 合并：模型默认 + 本次请求的覆盖

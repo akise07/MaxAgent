@@ -39,6 +39,8 @@ MaxAgent/
 │   ├── services/                  # 业务层
 │   │   ├── agent.py               #   LangGraph StateGraph 构造
 │   │   └── chat_service.py        #   聊天编排（显式参数，去全局）
+│   ├── context/                   # 上下文层
+│   │   └── context.py             #   对话上下文构建（历史消息组装 + 截断）
 │   ├── storage/                   # 持久化层
 │   │   ├── session_store.py       #   SessionManager（会话 JSON）
 │   │   ├── models.py              #   ModelConfigStore（模型配置 JSON）
@@ -173,6 +175,7 @@ app/api/chat.py: chat()
   app/services/chat_service.py: run_chat()
        ├─ 首次消息自动生成标题
        ├─ 写入用户消息（session_manager.add_message）
+       ├─ build_context()  ← app/context/context.py 组装历史消息 + SystemMessage
        ├─ resolve_llm_config()  ← 从 model_store 或 config 解析 LLM 参数
        ├─ build_thinking_kwargs()  ← advanced → reasoning_effort（直接透传 intensity 值）
        ├─ ChatOpenAI(**kwargs).invoke(messages)  ← 主路径
