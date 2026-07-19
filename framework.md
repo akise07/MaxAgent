@@ -34,7 +34,8 @@ MaxAgent/
 │   ├── api/                       # 路由层
 │   │   ├── chat.py                #   /api/chat、/api/config、/api/open-home
 │   │   ├── conversations.py       #   /api/conversations*
-│   │   └── models.py              #   /api/models*
+│   │   ├── models.py              #   /api/models*
+│   │   └── debug.py               #   热更新模块（后端 reload + 前端文件监听）
 │   ├── services/                  # 业务层
 │   │   ├── agent.py               #   LangGraph StateGraph 构造
 │   │   └── chat_service.py        #   聊天编排（显式参数，去全局）
@@ -69,12 +70,19 @@ MaxAgent/
 
 ### `app.py`（GUI 主入口，生产入口）
 
+启动入口：`main(debug=False)`，`debug=True` 时启用热更新。
+
 启动流程：
-1. 后台线程启动 `uvicorn` 监听 `127.0.0.1:8000`
-2. `wait_for_server` 轮询等待就绪
-3. `webview.create_window` 创建原生窗口加载 `http://127.0.0.1:8000`
-4. `webview.start()` 进入 GUI 事件循环
-5. 窗口关闭后 `stop_server` 停止 uvicorn
+1. `main(debug=True)` → `enable_hot_reload(app)` 注册热更新路由 + 启动前端文件监听
+2. 后台线程启动 `uvicorn` 监听 `127.0.0.1:8000`（`debug=True` 时 `reload=True`，排除 `app/static/`）
+3. `wait_for_server` 轮询等待就绪
+4. `webview.create_window` 创建原生窗口加载 `http://127.0.0.1:8000`
+5. `webview.start(debug=True)` 进入 GUI 事件循环（F12 打开开发者工具）
+6. 窗口关闭后 `disable_hot_reload()` + `stop_server()`
+
+热更新机制（`app/api/debug.py`）：
+- **后端**：uvicorn `reload=True` 监听 `app/` 下 `.py` 文件变更，自动重启
+- **前端**：`_watch_frontend` 线程每 0.5s 检测 `app/static/` 文件 MD5 变化 → 调用 `/api/reload-frontend` 设标志 → 前端每 1s 轮询 `/api/poll-reload` → `location.reload()`
 
 依赖注入顺序：
 ```python
@@ -147,6 +155,8 @@ app.py / main.py
 | PUT | `/api/models/{uid}` | `models.py` | 更新模型 |
 | DELETE | `/api/models/{uid}` | `models.py` | 删除模型 |
 | POST | `/api/models/{uid}/default` | `models.py` | 设默认模型 |
+| GET | `/api/reload-frontend` | `app.py` | 前端热更新通知 |
+| GET | `/api/poll-reload` | `app.py` | 前端热更新轮询 |
 
 ## 8. 聊天调用流程
 

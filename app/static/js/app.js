@@ -1127,6 +1127,20 @@
         await loadConversations();
         if (conversations.length > 0) await switchToConversation(conversations[0].id);
         else showWelcome();
+        // 启动热更新轮询
+        startHotReload();
     }
+
+    // ===== Hot Reload =====
+    function startHotReload() {
+        setInterval(async () => {
+            try {
+                const res = await fetch('/api/poll-reload');
+                const data = await res.json();
+                if (data.reload) location.reload();
+            } catch (_) {}
+        }, 1000);
+    }
+
     init();
 })();
