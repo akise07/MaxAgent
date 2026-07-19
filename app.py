@@ -15,6 +15,7 @@ from starlette.responses import Response
 from app.api import chat as chat_api
 from app.api import conversations
 from app.api import models as models_api
+from app.api import skills as skills_api
 from app.config.settings import Config
 from app.api.debug import disable_hot_reload, enable_hot_reload
 from app.services.agent import build_agent
@@ -58,6 +59,7 @@ models_api.init_store(model_store)
 appFastAPI.include_router(chat_api.router)
 appFastAPI.include_router(conversations.router)
 appFastAPI.include_router(models_api.router)
+appFastAPI.include_router(skills_api.router)
 
 
 @appFastAPI.get("/")

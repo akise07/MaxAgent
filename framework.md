@@ -35,12 +35,23 @@ MaxAgent/
 │   │   ├── chat.py                #   /api/chat、/api/config、/api/open-home
 │   │   ├── conversations.py       #   /api/conversations*
 │   │   ├── models.py              #   /api/models*
+│   │   ├── skills.py              #   /api/skills*（技能列表 + 执行）
 │   │   └── debug.py               #   热更新模块（后端 reload + 前端文件监听）
+│   ├── skills/                    # 技能层（文件夹 + skill.md，不含 .py）
+│   │   ├── __init__.py            #   SkillSpec 元数据 dataclass
+│   │   ├── web_search/            #   示例：联网搜索
+│   │   │   └── skill.md           #   YAML front matter + Markdown（含 #何时调用）
+│   │   ├── code_review/           #   示例：代码审查
+│   │   │   └── skill.md
+│   │   └── bash/                  #   Bash 命令执行
+│   │       ├── skill.md           #   技能文档
+│   │       └── executor.py        #   execute() 执行器
 │   ├── services/                  # 业务层
 │   │   ├── agent.py               #   LangGraph StateGraph 构造
-│   │   └── chat_service.py        #   聊天编排（显式参数，去全局）
+│   │   └── chat_service.py        #   聊天编排（显式参数，去全局，含 /skill 调用）
 │   ├── context/                   # 上下文层
-│   │   └── context.py             #   对话上下文构建（历史消息组装 + 截断）
+│   │   ├── context.py             #   对话上下文构建（历史消息组装 + 截断）
+│   │   └── skill_loader.py        #   技能加载器（扫描文件夹 + 解析 skill.md）
 │   ├── storage/                   # 持久化层
 │   │   ├── session_store.py       #   SessionManager（会话 JSON）
 │   │   ├── models.py              #   ModelConfigStore（模型配置 JSON）
@@ -160,6 +171,7 @@ app.py / main.py
 | POST | `/api/models/{uid}/default` | `models.py` | 设默认模型 |
 | GET | `/api/reload-frontend` | `app.py` | 前端热更新通知 |
 | GET | `/api/poll-reload` | `app.py` | 前端热更新轮询 |
+| GET | `/api/skills` | `skills.py` | 技能列表 |
 
 ## 8. 聊天调用流程
 
@@ -175,12 +187,57 @@ app/api/chat.py: chat()
   app/services/chat_service.py: run_chat()
        ├─ 首次消息自动生成标题
        ├─ 写入用户消息（session_manager.add_message）
-       ├─ build_context()  ← app/context/context.py 组装历史消息 + SystemMessage
+       ├─ build_context()  ← app/context/context.py 组装 SystemMessage + 历史消息
        ├─ resolve_llm_config()  ← 从 model_store 或 config 解析 LLM 参数
-       ├─ build_thinking_kwargs()  ← advanced → reasoning_effort（直接透传 intensity 值）
-       ├─ ChatOpenAI(**kwargs).invoke(messages)  ← 主路径
+       ├─ build_thinking_kwargs()  ← advanced → reasoning_effort
+       ├─ build_openai_tools()  ← skill_loader.py 将技能转为 OpenAI tools 格式
+       ├─ ChatOpenAI.bind_tools(tools)  ← 绑定工具到 LLM
+       ├─ 第一轮 invoke → LLM 返回 tool_calls（或直接回复）
+       │   ├─ 无 tool_calls → 直接使用回复内容
+       │   └─ 有 tool_calls → 执行工具 → ToolMessage 追加到消息列表
+       │       └─ 第二轮 invoke → LLM 根据工具结果生成最终回复
        ├─ 失败 fallback: agent.invoke()  ← LangGraph 路径
        └─ 写入助手回复（session_manager.add_message）
+```
+
+### Tool Calling 数据流
+
+```
+LLM 返回的 tool_calls 示例：
+  response.tool_calls = [
+    {
+      "name": "web_search",
+      "args": {"query": "今天天气"},
+      "id": "call_xxx"
+    }
+  ]
+
+后端执行：
+  → _execute_tool("web_search", {"query": "今天天气"})
+  → ToolMessage(content="...", tool_call_id="call_xxx")
+  → 追加到 messages 列表
+  → 第二轮 llm.invoke(messages) 生成最终回复
+```
+
+### skill.md → OpenAI Tool JSON Schema
+
+skill.md 中的参数表自动转为 tools 定义：
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "web_search",
+    "description": "搜索互联网获取实时信息",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "搜索关键词"}
+      },
+      "required": ["query"]
+    }
+  }
+}
 ```
 
 `thinking_only` 或 `allow_disable_thinking` 开启时，额外设置 `chat_template_kwargs.enable_thinking=True`（Qwen 风格，常规 API 忽略）。
@@ -220,7 +277,7 @@ app/static/
 | 欢迎页 | `#welcome` | 初始展示，含"新建任务"入口 |
 | 新建任务页 | `#new-task-page` | 全功能任务创建界面（能力快捷入口 + 输入区 + 工具栏 + 配置条） |
 | 对话页 | `#chat-area` | 聊天主界面（消息列表 + 底部输入框） |
-| 技能面板 | `#panel-skills` | 侧边面板，技能库（未上线） |
+| 技能面板 | `#panel-skills` | 侧边面板，展示技能卡片列表（从 `/api/skills` 加载） |
 | 自动化面板 | `#panel-automation` | 侧边面板，自动化任务（未上线） |
 
 ### 模态弹窗

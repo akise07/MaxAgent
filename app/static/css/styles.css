@@ -1378,6 +1378,78 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     font-size: 22px;
 }
 
+/* ===== Skills grid ===== */
+.skills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+    text-align: left;
+}
+
+.skill-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: default;
+    transition: border-color 0.2s;
+}
+
+.skill-card:hover {
+    border-color: var(--accent);
+}
+
+.skill-icon {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.skill-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.skill-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.skill-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.skill-category {
+    font-size: 11px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.skills-hint {
+    margin-top: 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.skills-hint code {
+    background: var(--input-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
 /* ===== Chat Area ===== */
 .chat-area {
     flex: 1;

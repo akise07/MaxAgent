@@ -377,6 +377,39 @@
         setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 50);
     }
 
+    // ===== Skills =====
+    async function loadSkills() {
+        if (!panelSkills) return;
+        try {
+            const res = await fetch('/api/skills');
+            const data = await res.json();
+            const skills = data.skills || [];
+            const inner = panelSkills.querySelector('.side-panel-inner');
+            if (!inner) return;
+            if (skills.length === 0) {
+                inner.innerHTML = `<h2>${t('sidebar.skills')}</h2><p>${t('skills.select_hint')}</p>`;
+                return;
+            }
+            inner.innerHTML = `
+                <h2>${t('sidebar.skills')}</h2>
+                <div class="skills-grid">${skills.map((s) => `
+                    <div class="skill-card" data-skill="${escapeHtml(s.name)}">
+                        <div class="skill-icon">${s.icon || '🧩'}</div>
+                        <div class="skill-info">
+                            <div class="skill-name">${escapeHtml(s.name)}</div>
+                            <div class="skill-desc">${escapeHtml(s.description)}</div>
+                        </div>
+                        <div class="skill-category">${escapeHtml(s.category)}</div>
+                    </div>
+                `).join('')}</div>
+                <p class="skills-hint">在聊天中输入 <code>!技能名 key=value</code> 调用技能</p>
+            `;
+        } catch (_) {
+            const inner = panelSkills.querySelector('.side-panel-inner');
+            if (inner) inner.innerHTML = `<h2>${t('sidebar.skills')}</h2><p>${t('common.request_failed')}</p>`;
+        }
+    }
+
     // ===== Views =====
     function hideAllMainViews() {
         if (welcome) welcome.style.display = 'none';
@@ -1002,7 +1035,7 @@
         });
     }
 
-    if (skillsBtn) skillsBtn.addEventListener('click', () => { setView('skills'); closeUserMenu(); });
+    if (skillsBtn) skillsBtn.addEventListener('click', () => { setView('skills'); closeUserMenu(); loadSkills(); });
     if (automationBtn) automationBtn.addEventListener('click', () => { setView('automation'); closeUserMenu(); });
 
     if (userBar) {

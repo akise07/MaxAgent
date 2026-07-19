@@ -1,15 +1,28 @@
-"""聊天业务编排：LLM 参数解析、thinking 透传、调用流程。
+"""聊天业务编排：LLM 参数解析、thinking 透传、Tool Calling 调用流程。
 
 从 app/api/fun.py 抽离的业务部分，改为显式参数（去模块全局变量），
 便于测试与复用。HTTPException 留在路由层处理。
+
+Tool Calling 流程：
+1. 构建上下文消息（含 SystemMessage + 历史）
+2. 用 bind_tools 将技能注册为 OpenAI tools
+3. LLM 返回 response.tool_calls → 执行对应技能 → 结果追加到消息列表
+4. 将最终回复返回给用户
 """
 from __future__ import annotations
 
+import importlib
+import json
+import os
+import re
+
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from app.config.model import THINKING_LEVELS
 from app.config.settings import Config
 from app.context.context import build_context
+from app.context.skill_loader import build_openai_tools, get_skill
 from app.storage.models import ModelConfigStore
 from app.storage.session_store import SessionManager
 from app.schemas.requests import ChatRequest
@@ -63,14 +76,56 @@ def resolve_llm_config(
     }
 
 
+def _read_skill_md(skill_name: str) -> str:
+    """读取 skill.md 正文（去掉 YAML front matter）。"""
+    skills_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills")
+    md_path = os.path.join(skills_dir, skill_name, "skill.md")
+    with open(md_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return re.sub(r"^---.*?---\s*", "", content, count=1, flags=re.DOTALL).strip()
+
+
+def _execute_tool(tool_name: str, arguments: dict) -> str:
+    """执行工具调用，返回结果文本。
+
+    优先尝试导入 app.skills.{tool_name}.execute() 作为执行器，
+    如果不存在则回退到读取 skill.md 返回文档内容。
+    """
+    skill = get_skill(tool_name)
+    if skill is None:
+        return f"未知工具：{tool_name}"
+
+    # 尝试动态导入技能模块中的 executor.execute 函数
+    try:
+        mod = importlib.import_module(f"app.skills.{tool_name}.executor")
+        if hasattr(mod, "execute"):
+            return mod.execute(**arguments)
+    except (ImportError, AttributeError):
+        pass
+    except Exception as e:
+        return f"工具 {tool_name} 执行失败：{str(e)}"
+
+    # 回退：读取 skill.md 内容返回
+    try:
+        body = _read_skill_md(tool_name)
+        args_desc = ""
+        if arguments:
+            args_desc = "\n\n**调用参数**：\n" + "\n".join(
+                f"- {k}: {v}" for k, v in arguments.items()
+            )
+        return f"**{skill.icon} {skill.name}**\n\n{body}{args_desc}"
+    except Exception as e:
+        return f"工具 {tool_name} 执行失败：{str(e)}"
+
+
 def run_chat(
-    req: ChatRequest,
+    req,
     session_manager: SessionManager,
     agent,
     model_store: ModelConfigStore | None,
     config: Config,
 ) -> dict:
-    """聊天业务编排：标题生成、消息写入、LLM 调用、fallback、异常兜底。
+    """聊天业务编排：标题生成、消息写入、LLM 调用、Tool Calling、fallback。
 
     调用方需保证会话已存在（路由层校验）。返回 {"reply": ...}。
     """
@@ -86,15 +141,16 @@ def run_chat(
     try:
         # 构建完整对话上下文（含历史消息）
         messages = build_context(req.conversation_id, session_manager)
-        # 优先按请求指定模型 / 默认模型即时调用
+
+        # 解析 LLM 配置
         llm_cfg = resolve_llm_config(model_store, config, req.model_id)
-        # 合并：模型默认 + 本次请求的覆盖
         advanced_cfg = dict(llm_cfg.get("advanced") or {})
         if req.thinking_enabled is not None:
             advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
         if req.thinking_intensity:
             advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
         reasoning_effort, model_kwargs = build_thinking_kwargs(advanced_cfg)
+
         llm_kwargs: dict = {
             "model": llm_cfg["model"],
             "api_key": llm_cfg["api_key"],
@@ -104,8 +160,36 @@ def run_chat(
             llm_kwargs["reasoning_effort"] = reasoning_effort
         if model_kwargs:
             llm_kwargs["model_kwargs"] = model_kwargs
+
+        # 构建 LLM 实例并绑定工具
+        tools = build_openai_tools()
         llm = ChatOpenAI(**llm_kwargs)
+        if tools:
+            llm = llm.bind_tools(tools)
+
+        # 第一轮调用：LLM 可能返回 tool_calls
         response = llm.invoke(messages)
+
+        # 处理 tool_calls
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            # 将 assistant 的 tool_calls 消息加入历史
+            messages.append(response)
+
+            # 逐个执行工具
+            for tc in response.tool_calls:
+                tool_name = tc.get("name", "")
+                tool_args = tc.get("args", {})
+                tool_call_id = tc.get("id", "")
+
+                result = _execute_tool(tool_name, tool_args)
+                messages.append(
+                    ToolMessage(content=result, tool_call_id=tool_call_id)
+                )
+
+            # 第二轮调用：将工具结果送回 LLM 生成最终回复
+            response = llm.invoke(messages)
+
+        # 提取回复内容
         reply = getattr(response, "content", None) or ""
         if not reply and agent is not None:
             result = agent.invoke({"messages": messages})
