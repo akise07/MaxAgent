@@ -301,9 +301,23 @@ async def run_chat_stream(
 
             # ---- 工具调用开始 ----
             elif kind == "on_tool_start":
+                # 将第一轮的 thinking 存储为 assistant 消息
+                if collected_thinking or collected_content:
+                    session_manager.add_message(
+                        req.conversation_id, "assistant", collected_content or "",
+                        thinking=collected_thinking or None,
+                    )
+                    # 重置累积变量，准备第二轮
+                    collected_thinking = ""
+                    collected_content = ""
                 tool_name = event.get("name", "")
                 tool_input = event.get("data", {}).get("input", {})
                 tool_id = event.get("run_id", "")
+                # 存储 tool_call 信息到会话（用于刷新后渲染 tool 行）
+                session_manager.add_message(
+                    req.conversation_id, "assistant", "",
+                    tool_calls=[{"name": tool_name, "args": tool_input, "id": tool_id}],
+                )
                 yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name, 'args': tool_input, 'id': tool_id})}\n\n"
 
             # ---- 工具调用结束 ----
@@ -314,6 +328,11 @@ async def run_chat_stream(
                 # tool_output 是 ToolMessage，提取 content
                 if hasattr(tool_output, "content"):
                     tool_output = tool_output.content
+                # 存储 tool 消息到会话
+                session_manager.add_message(
+                    req.conversation_id, "tool", str(tool_output),
+                    tool_call_id=tool_id,
+                )
                 yield f"data: {json.dumps({'type': 'tool_result', 'name': tool_name, 'content': str(tool_output), 'id': tool_id})}\n\n"
 
         # 最终回复
