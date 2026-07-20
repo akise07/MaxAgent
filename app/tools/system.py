@@ -13,44 +13,37 @@ from langchain_core.tools import tool
 
 @tool
 def bash(command: str) -> str:
-    """在用户的 Windows 电脑上执行 PowerShell 命令并返回结果。
+    """在用户的 Windows 电脑上执行 CMD 命令并返回结果。
 
     当用户要求执行系统命令、运行脚本、操作文件、安装软件、
     查看系统信息、管理进程等需要执行终端命令的操作时使用。
-
-    注意：PowerShell 中 curl 是 Invoke-WebRequest 的别名，
-    如需使用真正的 curl，请用 curl.exe（系统会自动处理此替换）。
+    必须确保传入的命令参数是CMD命令
+    如果传入的命令带python代码，优先尝试直接运行该代码，执行python -c \"python代码\"，如果你没法通过修改这串指令来保证成功运行python代码，就尝试写一个临时python脚本来运行
 
     参数：
-        command: 要执行的 PowerShell 命令
+        command: 要执行的 CMD 命令
     """
     if not command:
         return "请提供要执行的命令。"
 
     try:
-        # PowerShell 中 curl 是 Invoke-WebRequest 的别名，不是真正的 curl
-        # 自动将 curl 替换为 curl.exe 避免别名冲突
-        fixed_command = command
-        # 用单词边界匹配独立的 curl（非 curl.exe），替换为 curl.exe
-        import re
-        fixed_command = re.sub(
-            r'\bcurl\b(?!\.exe)',
-            'curl.exe',
-            fixed_command,
-            flags=re.IGNORECASE,
-        )
-
         result = subprocess.run(
-            ["powershell", "-Command", fixed_command],
+            ["cmd", "/c", command],
             capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
             timeout=30,
         )
+        # CMD 默认使用 GBK 编码输出，手动解码
+        def _decode(data: bytes) -> str:
+            if not data:
+                return ""
+            try:
+                return data.decode("gbk")
+            except UnicodeDecodeError:
+                return data.decode("utf-8", errors="replace")
+
         output_parts = []
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
+        stdout = _decode(result.stdout)
+        stderr = _decode(result.stderr)
         if stdout.strip():
             output_parts.append(f"**标准输出**：\n```\n{stdout.strip()}\n```")
         if stderr.strip():

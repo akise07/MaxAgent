@@ -74,6 +74,7 @@ def validate_size(width: int, height: int) -> str:
 ### 1. 检查环境变量
 
 先检查系统环境变量 `GPT_IMAGE_API_KEY` 和 `GPT_IMAGE_BASE_URL` 是否已设置。
+当 CMD 中 echo %变量名% 原样输出 %变量名%（而不是变量的值）时，表示该变量未设置。
 
 ### 2a. 已设置 → 直接使用
 
@@ -83,9 +84,9 @@ Python 代码直接从 `os.environ` 读取，无需做任何额外操作。
 
 提示用户提供 API Key 和 Base URL，收到后用 `export` 写入当前 shell 环境：
 
-```bash
-export GPT_IMAGE_API_KEY='<用户提供的 key>'
-export GPT_IMAGE_BASE_URL='<用户提供的 base url>'
+```cmd
+set  GPT_IMAGE_API_KEY='<用户提供的 key>'
+set  GPT_IMAGE_BASE_URL='<用户提供的 base url>'
 ```
 
 之后所有 Python 代码统一从 `os.environ` 读取，**不再需要任何特殊处理**。
