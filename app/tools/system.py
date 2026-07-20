@@ -44,13 +44,17 @@ def bash(command: str) -> str:
             ["powershell", "-Command", fixed_command],
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=30,
         )
         output_parts = []
-        if result.stdout.strip():
-            output_parts.append(f"**标准输出**：\n```\n{result.stdout.strip()}\n```")
-        if result.stderr.strip():
-            output_parts.append(f"**错误输出**：\n```\n{result.stderr.strip()}\n```")
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
+        if stdout.strip():
+            output_parts.append(f"**标准输出**：\n```\n{stdout.strip()}\n```")
+        if stderr.strip():
+            output_parts.append(f"**错误输出**：\n```\n{stderr.strip()}\n```")
         if result.returncode != 0:
             output_parts.append(f"**退出码**：{result.returncode}")
         if not output_parts:
