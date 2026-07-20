@@ -30,6 +30,7 @@
     --radius-sm: 6px;
     --menu-bg: #2b2b2b;
     --avatar-bg: linear-gradient(135deg, #0078d4, #4fc1ff);
+    --hover-bg: rgba(255, 255, 255, 0.08);
 }
 
 /* Light theme */
@@ -55,6 +56,7 @@ html[data-theme="light"] {
     --shadow: 0 2px 8px rgba(0,0,0,0.08);
     --menu-bg: #ffffff;
     --avatar-bg: linear-gradient(135deg, #0078d4, #4fc1ff);
+    --hover-bg: rgba(0, 0, 0, 0.06);
 }
 
 html, body {
@@ -1602,9 +1604,7 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
 /* ===== Input Area ===== */
 .input-area {
     margin-right: 6px;
-    padding: 16px 18px 16px 24px;
-    /* padding: 16px 24px; */
-    /* border-top: 1px solid var(--border-color); */
+    padding: 12px 18px 12px 24px;
     flex-shrink: 0;
     position: absolute;
     left: 0;
@@ -1612,6 +1612,9 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     bottom: 0;
     z-index: 10;
     background: linear-gradient(to top, var(--main-bg) 80%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .input-wrapper {
@@ -1621,7 +1624,7 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     background: var(--input-bg);
     border: 1px solid var(--input-border);
     border-radius: 12px;
-    padding: 8px 12px;
+    padding: 10px 14px;
     transition: border-color 0.2s;
     max-width: 768px;
     margin: 0 auto;
@@ -1641,13 +1644,32 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     line-height: 1.5;
     resize: none;
     outline: none;
-    max-height: 120px;
+    max-height: 200px;
+    min-height: 24px;
     font-family: inherit;
     align-self: flex-start;
 }
 
 #message-input::placeholder {
     color: var(--text-secondary);
+}
+
+/* ===== Input Toolbar ===== */
+.input-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 768px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 0 2px;
+}
+
+.input-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
 }
 
 .btn-send {
@@ -1663,7 +1685,89 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     justify-content: center;
     flex-shrink: 0;
     transition: all 0.2s;
-    align-self: flex-end;
+}
+
+.btn-send:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ===== Context Indicator ===== */
+.context-indicator-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.context-indicator {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.context-indicator:hover {
+    background: var(--hover-bg);
+}
+
+.context-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--tooltip-bg, #333);
+    color: var(--tooltip-text, #fff);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.context-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--tooltip-bg, #333);
+}
+
+/* ===== Model Picker in Chat ===== */
+#chat-model-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 4px 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: border-color 0.2s;
+}
+
+#chat-model-btn:hover {
+    border-color: var(--accent);
+}
+
+#chat-model-btn .chev {
+    color: var(--text-secondary);
+}
+
+#chat-model-menu {
+    right: 0;
+    left: auto;
+    min-width: 180px;
 }
 
 /* ===== Empty state ===== */

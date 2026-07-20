@@ -50,6 +50,9 @@
     const taskModelLabel = $('task-model-label');
     const taskModelBtn = $('task-model-btn');
     const taskModelMenu = $('task-model-menu');
+    const chatModelLabel = $('chat-model-label');
+    const chatModelBtn = $('chat-model-btn');
+    const chatModelMenu = $('chat-model-menu');
     const closeNewTaskBtn = $('close-new-task-btn');
     const welcomeNewTaskBtn = $('welcome-new-task-btn');
     const taskPlusBtn = $('task-plus-btn');
@@ -158,31 +161,67 @@
         return models.find((m) => m.id === selectedModelId) || models[0] || null;
     }
 
+    function getModelContextSize() {
+        const m = getSelectedModel();
+        return (m && m.advanced && m.advanced.context_size) || 0;
+    }
+
+    function updateContextIndicator() {
+        const arc = $('context-progress-arc');
+        const tooltip = $('context-tooltip-text');
+        if (!arc || !tooltip) return;
+        if (!currentConversationId) {
+            arc.setAttribute('stroke-dashoffset', '94.2');
+            tooltip.textContent = '0% 0K/0K ' + t('chat.context_used');
+            return;
+        }
+        const conv = conversations.find((c) => c.id === currentConversationId);
+        const msgs = conv ? conv.message_count || 0 : 0;
+        const contextSize = getModelContextSize();
+        if (!contextSize) {
+            arc.setAttribute('stroke-dashoffset', '94.2');
+            tooltip.textContent = '-- ' + t('chat.context_na');
+            return;
+        }
+        // 粗略估算：每条消息平均 ~500 tokens
+        const estimatedTokens = Math.max(msgs * 500, 1);
+        const pct = Math.min(100, Math.round((estimatedTokens / contextSize) * 100));
+        const circumference = 94.2;
+        const offset = circumference - (pct / 100) * circumference;
+        arc.setAttribute('stroke-dashoffset', String(offset));
+        const usedK = Math.round(estimatedTokens / 1000);
+        const totalK = Math.round(contextSize / 1000);
+        tooltip.textContent = pct + '% ' + usedK + 'K/' + totalK + 'K ' + t('chat.context_used');
+    }
+
     function updateModelPickerLabel() {
         const m = getSelectedModel();
-        if (taskModelLabel) {
-            taskModelLabel.textContent = m ? (m.name || m.model_id || 'model') : '-';
-        }
+        const label = m ? (m.name || m.model_id || 'model') : '-';
+        if (taskModelLabel) taskModelLabel.textContent = label;
+        if (chatModelLabel) chatModelLabel.textContent = label;
     }
 
     function renderModelMenu() {
-        if (!taskModelMenu) return;
-        if (!models.length) {
-            taskModelMenu.innerHTML = `<div class="dropdown-item" style="cursor:default;opacity:.7">${t('settings.no_models')}</div>`;
-            return;
-        }
-        taskModelMenu.innerHTML = models.map((m) => `
-            <button type="button" class="dropdown-item ${m.id === selectedModelId ? 'active' : ''}" data-model-id="${m.id}">
-                <span>${escapeHtml(m.name || m.model_id)}</span>
-                ${m.is_default ? `<span class="badge-default">${t('settings.default')}</span>` : ''}
-            </button>
-        `).join('');
-        taskModelMenu.querySelectorAll('[data-model-id]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                selectedModelId = btn.dataset.modelId;
-                localStorage.setItem('maxagent-model-id', selectedModelId);
-                updateModelPickerLabel();
-                closeAllDropdowns();
+        const menus = [taskModelMenu, chatModelMenu].filter(Boolean);
+        menus.forEach((menu) => {
+            if (!models.length) {
+                menu.innerHTML = `<div class="dropdown-item" style="cursor:default;opacity:.7">${t('settings.no_models')}</div>`;
+                return;
+            }
+            menu.innerHTML = models.map((m) => `
+                <button type="button" class="dropdown-item ${m.id === selectedModelId ? 'active' : ''}" data-model-id="${m.id}">
+                    <span>${escapeHtml(m.name || m.model_id)}</span>
+                    ${m.is_default ? `<span class="badge-default">${t('settings.default')}</span>` : ''}
+                </button>
+            `).join('');
+            menu.querySelectorAll('[data-model-id]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    selectedModelId = btn.dataset.modelId;
+                    localStorage.setItem('maxagent-model-id', selectedModelId);
+                    updateModelPickerLabel();
+                    updateContextIndicator();
+                    closeAllDropdowns();
+                });
             });
         });
     }
@@ -220,6 +259,7 @@
             const data = await api('/api/conversations');
             conversations = data.conversations || [];
             renderConversationList(searchInput ? searchInput.value : '');
+            updateContextIndicator();
         } catch (e) {
             console.error('加载会话列表失败:', e);
         }
@@ -630,7 +670,7 @@
                         <div class="skill-category">${escapeHtml(s.category)}</div>
                     </div>
                 `).join('')}</div>
-                <p class="skills-hint">在聊天中输入 <code>!技能名 key=value</code> 调用技能</p>
+                <p class="skills-hint">在聊天中输入 <code>/技能名</code> 调用技能</p>
             `;
         } catch (_) {
             const inner = panelSkills.querySelector('.side-panel-inner');
@@ -902,6 +942,7 @@
         renderMessages(messages);
         isLoading = false;
         sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
+        updateContextIndicator();
     }
 
     async function handleSend() {
@@ -919,16 +960,17 @@
                 const conv = conversations.find((c) => c.id === currentConversationId);
                 if (conv) chatTitle.textContent = conv.title;
                 renderConversationList(searchInput ? searchInput.value : '');
+                updateContextIndicator();
             })
         );
     }
 
     // ===== Dropdowns =====
     function closeAllDropdowns() {
-        [taskPlusMenu, taskModelMenu, workspaceMenu, permissionMenu].forEach((el) => {
+        [taskPlusMenu, taskModelMenu, chatModelMenu, workspaceMenu, permissionMenu].forEach((el) => {
             if (el) el.hidden = true;
         });
-        [taskPlusBtn, taskModelBtn, workspaceBtn, permissionBtn].forEach((el) => {
+        [taskPlusBtn, taskModelBtn, chatModelBtn, workspaceBtn, permissionBtn].forEach((el) => {
             if (el) el.classList.remove('open');
         });
     }
@@ -1108,10 +1150,8 @@
             const radio = wrap.querySelector(`input[type=radio][value="${targetVal}"]`);
             if (radio) radio.checked = true;
         }
-        const inEl = $('model-adv-input');
-        const outEl = $('model-adv-output');
-        if (inEl) inEl.value = a.context_input || '';
-        if (outEl) outEl.value = a.context_output || '';
+        const ctxEl = $('model-adv-context');
+        if (ctxEl) ctxEl.value = a.context_size || '';
         syncThinkingVisibility();
     }
 
@@ -1122,8 +1162,7 @@
             const checked = document.querySelector('#model-adv-supported-wrap input[type=radio]:checked');
             supported = checked ? [checked.value] : ['high'];
         }
-        const inEl = $('model-adv-input');
-        const outEl = $('model-adv-output');
+        const ctxEl = $('model-adv-context');
         return {
             tool_calling: !!$('model-adv-tool')?.checked,
             image_input: !!$('model-adv-image')?.checked,
@@ -1134,8 +1173,7 @@
                 ? ($('model-adv-default-intensity')?.value || 'high')
                 : '',
             supported_thinking_intensities: supported,
-            context_input: Number(inEl?.value || 0),
-            context_output: Number(outEl?.value || 0),
+            context_size: Number(ctxEl?.value || 0),
         };
     }
 
@@ -1297,6 +1335,14 @@
         });
         taskModelMenu.addEventListener('click', (e) => e.stopPropagation());
     }
+    if (chatModelBtn && chatModelMenu) {
+        chatModelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renderModelMenu();
+            toggleDropdown(chatModelBtn, chatModelMenu);
+        });
+        chatModelMenu.addEventListener('click', (e) => e.stopPropagation());
+    }
 
     // workspace / permission
     if (workspaceBtn && workspaceMenu) {
@@ -1438,9 +1484,17 @@
     if (openMemoryBtn) openMemoryBtn.addEventListener('click', openHomeDir);
 
     sendBtn.addEventListener('click', handleSend);
+
+    // context indicator
+    const contextIndicator = $('context-indicator');
+    const contextTooltip = $('context-tooltip');
+    if (contextIndicator && contextTooltip) {
+        contextIndicator.addEventListener('mouseenter', () => { contextTooltip.hidden = false; });
+        contextIndicator.addEventListener('mouseleave', () => { contextTooltip.hidden = true; });
+    }
     messageInput.addEventListener('input', () => {
         messageInput.style.height = 'auto';
-        messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
         sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
     });
     messageInput.addEventListener('keydown', (e) => {

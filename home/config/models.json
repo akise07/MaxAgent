@@ -16,8 +16,7 @@
         "supported_thinking_intensities": [
           "high"
         ],
-        "context_input": 131072,
-        "context_output": 32768
+        "context_size": 192000
       }
     },
     {
@@ -25,7 +24,19 @@
       "name": "deepseek-v4-flash",
       "api_endpoint": "http://localhost:8111/v1",
       "api_key": "abc123",
-      "model_id": "deepseek-v4-flash"
+      "model_id": "deepseek-v4-flash",
+      "advanced": {
+        "tool_calling": false,
+        "image_input": false,
+        "thinking_mode": false,
+        "thinking_only": false,
+        "allow_disable_thinking": false,
+        "default_thinking_intensity": "high",
+        "supported_thinking_intensities": [
+          "high"
+        ],
+        "context_size": 1000000
+      }
     }
   ],
   "default_model_id": "62e5248e-d757-4905-a15b-9632d744770f"

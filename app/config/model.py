@@ -42,8 +42,7 @@ class AdvancedConfig(BaseModel):
     supported_thinking_intensities: list[str] = Field(
         default_factory=lambda: [ThinkingIntensity.HIGH.value]
     )
-    context_input: int = 0
-    context_output: int = 0
+    context_size: int = 0
 
 
 # ===== 默认值工厂 =====
@@ -57,6 +56,5 @@ def default_advanced() -> dict:
         "allow_disable_thinking": False,
         "default_thinking_intensity": ThinkingIntensity.HIGH.value,
         "supported_thinking_intensities": [ThinkingIntensity.HIGH.value],
-        "context_input": 0,
-        "context_output": 0,
+        "context_size": 0,
     }

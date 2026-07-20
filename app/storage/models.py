@@ -39,13 +39,9 @@ class ModelConfigStore:
             base["default_thinking_intensity"] = "high"
         # 数值字段兜底
         try:
-            base["context_input"] = int(base.get("context_input") or 0)
+            base["context_size"] = int(base.get("context_size") or 0)
         except (TypeError, ValueError):
-            base["context_input"] = 0
-        try:
-            base["context_output"] = int(base.get("context_output") or 0)
-        except (TypeError, ValueError):
-            base["context_output"] = 0
+            base["context_size"] = 0
         return base
 
     def _item_out(self, item: dict[str, Any], is_default: bool, include_key: bool) -> dict[str, Any]:

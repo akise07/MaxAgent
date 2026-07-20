@@ -310,11 +310,36 @@
                 <div class="input-area">
                     <div class="input-wrapper">
                         <textarea id="message-input" rows="1" data-i18n-placeholder="chat.message_placeholder" placeholder="输入消息..." autocomplete="off"></textarea>
-                        <button id="send-btn" class="btn-send" disabled>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-                            </svg>
-                        </button>
+                    </div>
+                    <div class="input-toolbar">
+                        <div class="input-toolbar-left">
+                            <!-- 预留左侧控件 -->
+                        </div>
+                        <div class="input-toolbar-right">
+                            <div class="context-indicator-wrap">
+                                <button type="button" id="context-indicator" class="context-indicator" title="">
+                                    <svg width="20" height="20" viewBox="0 0 36 36">
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="var(--border-color)" stroke-width="3"/>
+                                        <circle cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round" transform="rotate(-90 18 18)" id="context-progress-arc"/>
+                                    </svg>
+                                </button>
+                                <div id="context-tooltip" class="context-tooltip" hidden>
+                                    <span id="context-tooltip-text">0% 0K/0K 上下文已使用</span>
+                                </div>
+                            </div>
+                            <div class="model-picker-wrap">
+                                <button type="button" id="chat-model-btn" class="model-picker-btn" aria-haspopup="listbox">
+                                    <span id="chat-model-label">hy3</span>
+                                    <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                </button>
+                                <div id="chat-model-menu" class="dropdown-menu model-menu" hidden></div>
+                            </div>
+                            <button id="send-btn" class="btn-send" disabled>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -464,23 +489,13 @@
                             </div>
                             <div class="form-row">
                                 <label class="form-field">
-                                    <span data-i18n="settings.adv_input">输入</span>
-                                    <input type="number" min="0" step="1" id="model-adv-input" placeholder="500000" autocomplete="off">
-                                    <div class="quick-values" data-target="model-adv-input" data-multiplier="1024">
+                                    <span data-i18n="settings.adv_context">模型上下文大小</span>
+                                    <input type="number" min="0" step="1" id="model-adv-context" placeholder="500000" autocomplete="off">
+                                    <div class="quick-values" data-target="model-adv-context" data-multiplier="1024">
                                         <button type="button" data-val="32">32K</button>
                                         <button type="button" data-val="64">64K</button>
                                         <button type="button" data-val="128">128K</button>
                                         <button type="button" data-val="256">256K</button>
-                                    </div>
-                                </label>
-                                <label class="form-field">
-                                    <span data-i18n="settings.adv_output">输出</span>
-                                    <input type="number" min="0" step="1" id="model-adv-output" placeholder="64000" autocomplete="off">
-                                    <div class="quick-values" data-target="model-adv-output" data-multiplier="1024">
-                                        <button type="button" data-val="8">8K</button>
-                                        <button type="button" data-val="16">16K</button>
-                                        <button type="button" data-val="32">32K</button>
-                                        <button type="button" data-val="64">64K</button>
                                     </div>
                                 </label>
                             </div>
