@@ -43,15 +43,19 @@ MaxAgent/
 │   │   │   └── skill.md           #   YAML front matter + Markdown（含 #何时调用）
 │   │   ├── code_review/           #   示例：代码审查
 │   │   │   └── skill.md
-│   │   └── bash/                  #   Bash 命令执行
-│   │       ├── skill.md           #   技能文档
-│   │       └── executor.py        #   execute() 执行器
+│   │   └── bash/                  #   Bash 命令执行（已废弃，由 tools/system.py 接管）
+│   │       ├── skill.md           #   技能文档（仅用于技能列表展示）
+│   │       └── executor.py        #   执行器（已废弃，保留兼容）
+│   ├── tools/                     # 系统内置工具层（@tool 装饰器）
+│   │   ├── system.py              #   bash 工具（PowerShell 命令执行）
+│   │   └── file.py                #   文件操作工具（预留）
 │   ├── services/                  # 业务层
 │   │   ├── agent.py               #   LangGraph StateGraph 构造
 │   │   └── chat_service.py        #   聊天编排（显式参数，去全局，含 /skill 调用）
 │   ├── context/                   # 上下文层
-│   │   ├── context.py             #   对话上下文构建（历史消息组装 + 截断）
-│   │   └── skill_loader.py        #   技能加载器（扫描文件夹 + 解析 skill.md）
+│   │   ├── context.py             #   对话上下文构建（历史消息组装 + 截断 + token 计数）
+│   │   ├── skill_loader.py        #   技能加载器（扫描文件夹 + 解析 skill.md）
+│   │   └── tool_loader.py         #   工具加载器（扫描 tools/ + 生成描述文本）
 │   ├── storage/                   # 持久化层
 │   │   ├── session_store.py       #   SessionManager（会话 JSON）
 │   │   ├── models.py              #   ModelConfigStore（模型配置 JSON）
@@ -173,6 +177,7 @@ app.py / main.py
 | GET | `/api/reload-frontend` | `app.py` | 前端热更新通知 |
 | GET | `/api/poll-reload` | `app.py` | 前端热更新轮询 |
 | GET | `/api/skills` | `skills.py` | 技能列表 |
+| GET | `/api/chat/context-usage` | `chat.py` | 上下文 token 使用量 |
 
 ## 8. 聊天调用流程
 
@@ -188,17 +193,34 @@ app/api/chat.py: chat()
   app/services/chat_service.py: run_chat()
        ├─ 首次消息自动生成标题
        ├─ 写入用户消息（session_manager.add_message）
-       ├─ build_context()  ← app/context/context.py 组装 SystemMessage + 历史消息
-       ├─ resolve_llm_config()  ← 从 model_store 或 config 解析 LLM 参数
-       ├─ build_thinking_kwargs()  ← advanced → reasoning_effort
-       ├─ build_openai_tools()  ← skill_loader.py 将技能转为 OpenAI tools 格式
-       ├─ ChatOpenAI.bind_tools(tools)  ← 绑定工具到 LLM
+       ├─ _build_llm()  ← 构建 LLM 实例
+       │   ├─ resolve_llm_config()  ← 从 model_store 或 config 解析 LLM 参数
+       │   ├─ build_thinking_kwargs()  ← advanced → reasoning_effort + extra_body
+       │   ├─ build_openai_tools()  ← skill_loader.py 将技能转为 OpenAI tools 格式（排除 bash）
+       │   ├─ load_all_tools()  ← tool_loader.py 扫描 tools/ 加载 @tool 装饰器工具
+       │   ├─ ChatOpenAI.bind_tools(skill_tools)  ← 绑定技能工具
+       │   └─ ChatOpenAI.bind_tools(system_tools)  ← 绑定系统工具
+       ├─ build_context(tools=system_tools, include_skills=True)  ← 组装 SystemMessage
+       │   ├─ 基础 system prompt
+       │   ├─ + get_tool_descriptions(system_tools)  ← 系统工具描述
+       │   └─ + get_skill_descriptions()  ← 技能描述（排除 bash）
        ├─ 第一轮 invoke → LLM 返回 tool_calls（或直接回复）
        │   ├─ 无 tool_calls → 直接使用回复内容
        │   └─ 有 tool_calls → 执行工具 → ToolMessage 追加到消息列表
        │       └─ 第二轮 invoke → LLM 根据工具结果生成最终回复
        ├─ 失败 fallback: agent.invoke()  ← LangGraph 路径
-       └─ 写入助手回复（session_manager.add_message）
+       └─ 写入助手回复（session_manager.add_message，含 thinking 字段）
+```
+
+### 思维链（reasoning_content）数据流
+
+```
+OpenAI 兼容 API 返回 delta.reasoning_content
+  → monkey-patch _convert_delta_to_message_chunk 存入 additional_kwargs
+  → 流式输出时提取为 thinking 事件（SSE type: "thinking"）
+  → 前端渲染为可折叠"深度思考"行（默认展开）
+  → 持久化到会话 JSON 的 thinking 字段
+  → 后续对话通过 build_context 的 additional_kwargs 传入 LLM
 ```
 
 ### Tool Calling 数据流
@@ -213,13 +235,18 @@ LLM 返回的 tool_calls 示例：
     }
   ]
 
-后端执行：
-  → _execute_tool("web_search", {"query": "今天天气"})
-  → 通过 skill.dir_path 定位技能目录，用 importlib.util.spec_from_file_location
-    从绝对路径加载 executor.py（不依赖 app.skills 包名）
-  → ToolMessage(content="...", tool_call_id="call_xxx")
-  → 追加到 messages 列表
-  → 第二轮 llm.invoke(messages) 生成最终回复
+工具执行优先级：
+  1. 系统内置工具（app/tools/ 下的 @tool 装饰器工具）
+     → 通过 load_all_tools() 查找匹配的 BaseTool.invoke()
+  2. 技能目录下的 executor.py
+     → 通过 skill.dir_path 定位，用 importlib.util.spec_from_file_location
+       从绝对路径加载 executor.py（不依赖 app.skills 包名）
+  3. 回退到读取 skill.md 返回文档内容
+
+两段式思考：
+  - 第一轮 thinking：决定调用工具前的推理过程
+  - 第二轮 thinking：分析工具执行结果后的推理过程
+  - 前端分别渲染为独立的可折叠 thinking 行
 ```
 
 ### skill.md → OpenAI Tool JSON Schema
@@ -303,19 +330,21 @@ app/static/
 | 模块 | 行号 | 职责 |
 |------|------|------|
 | State | 5-18 | 全局状态变量 |
-| DOM refs | 19-64 | DOM 元素引用 |
-| API Helpers | 65-79 | fetch 封装 |
-| Toast | 80-89 | 通知提示 |
-| Theme | 90-107 | 暗色/亮色主题切换 |
-| i18n | 108-139 | 国际化渲染 |
-| Models | 140-216 | 模型列表 CRUD + 下拉菜单 |
-| Conversation | 217-379 | 会话列表加载/切换/CRUD |
-| Views | 380-454 | 视图切换（欢迎页/新建任务/对话/面板） |
-| Task composer | 455-587 | 新建任务页交互（附件/模型选择/发送） |
-| Dropdowns | 588-620 | 下拉菜单通用逻辑 |
-| User menu / settings | 621-881 | 用户菜单 + 设置弹窗 + 模型编辑表单 |
-| Events | 882-1116 | 事件绑定 |
-| Init | 1117- | 初始化入口 |
+| DOM refs | 19-67 | DOM 元素引用 |
+| API Helpers | 68-82 | fetch 封装 |
+| Toast | 83-92 | 通知提示 |
+| Theme | 93-110 | 暗色/亮色主题切换 |
+| i18n | 111-142 | 国际化渲染 |
+| Models | 143-259 | 模型列表 CRUD + 下拉菜单（含上下文进度圈） |
+| Conversation | 260-665 | 会话列表加载/切换/CRUD + 消息渲染（含 thinking 行） |
+| Skills | 666-698 | 技能列表加载 |
+| Views | 699-773 | 视图切换（欢迎页/新建任务/对话/面板） |
+| Task composer | 774-985 | 新建任务页交互（附件/模型选择/发送） |
+| Dropdowns | 986-1018 | 下拉菜单通用逻辑 |
+| User menu / settings | 1019-1275 | 用户菜单 + 设置弹窗 + 模型编辑表单 |
+| Events | 1276-1526 | 事件绑定（含上下文指示器悬浮事件） |
+| Init | 1527-1543 | 初始化入口 |
+| Hot Reload | 1544- | 前端热更新轮询 |
 
 ## 11. 其他资产
 

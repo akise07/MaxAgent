@@ -7,3 +7,4 @@ tests/images/*
 tests/outputs/*
 weights/*
 .workbuddy
+context.json
