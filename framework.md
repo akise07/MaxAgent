@@ -346,7 +346,287 @@ app/static/
 | Init | 1527-1543 | 初始化入口 |
 | Hot Reload | 1544- | 前端热更新轮询 |
 
-## 11. 其他资产
+## 11. 方法清单
+
+### `app.py`
+
+```
+_access_log()
+  └─ FastAPI 中间件：自定义访问日志，过滤热更新心跳请求
+index()
+  └─ 返回 index.html 首页
+start_server()
+  └─ 后台线程启动 uvicorn 服务器（127.0.0.1:8000）
+stop_server()
+  └─ 停止 uvicorn 服务器
+wait_for_server()
+  └─ 轮询等待服务器就绪（超时 15s）
+create_window()
+  └─ 创建 pywebview 原生窗口（1200×800，最小 900×600）
+main()
+  └─ 应用主入口：启动服务器 → 创建窗口 → 进入 GUI 事件循环
+```
+
+### `app/api/chat.py`
+
+```
+init_dependencies()
+  └─ 注入全局依赖（SessionManager / Agent / Config / ModelConfigStore）
+_open_in_file_manager()
+  └─ 用系统文件管理器打开指定目录（跨平台）
+get_config()
+  └─ GET /api/config：返回前端配置（API 端点、模型名、默认模型 ID、home 目录）
+open_home()
+  └─ POST /api/open-home：在文件管理器中打开 home 目录
+chat()
+  └─ POST /api/chat：非流式聊天接口，校验依赖后调用 chat_service.run_chat()
+get_context_usage()
+  └─ GET /api/chat/context-usage：返回会话的上下文 token 使用量
+chat_stream()
+  └─ POST /api/chat/stream：流式聊天接口（SSE），返回 StreamingResponse
+```
+
+### `app/api/conversations.py`
+
+```
+init_dependencies()
+  └─ 注入 SessionManager 依赖
+list_conversations()
+  └─ GET /api/conversations：返回所有会话列表
+new_conversation()
+  └─ POST /api/conversations/new：创建新会话
+get_conversation()
+  └─ GET /api/conversations/{id}：获取指定会话详情
+delete_conversation()
+  └─ DELETE /api/conversations/{id}：删除会话
+rename_conversation()
+  └─ PUT /api/conversations/rename：重命名会话
+```
+
+### `app/api/models.py`
+
+```
+init_store()
+  └─ 注入 ModelConfigStore 依赖
+get_store()
+  └─ 获取 ModelConfigStore 实例（未初始化则抛 500）
+list_models()
+  └─ GET /api/models：返回模型列表 + 默认模型 ID
+get_model()
+  └─ GET /api/models/{uid}：获取单个模型详情（含密钥占位符）
+create_model()
+  └─ POST /api/models：新增模型配置
+update_model()
+  └─ PUT /api/models/{uid}：更新模型配置
+delete_model()
+  └─ DELETE /api/models/{uid}：删除模型
+set_default_model()
+  └─ POST /api/models/{uid}/default：设为默认模型
+```
+
+### `app/api/skills.py`
+
+```
+api_list_skills()
+  └─ GET /api/skills：返回所有可用技能列表
+```
+
+### `app/api/debug.py`
+
+```
+enable_hot_reload()
+  └─ 启用热更新：注册路由 + 启动前端文件监听线程
+disable_hot_reload()
+  └─ 停止热更新（窗口关闭时调用）
+_register_routes()
+  └─ 注册 /api/reload-frontend 和 /api/poll-reload 路由
+reload_frontend()
+  └─ GET /api/reload-frontend：前端文件变更后通知浏览器刷新
+poll_reload()
+  └─ GET /api/poll-reload：前端轮询检测是否需要刷新
+_start_frontend_watcher()
+  └─ 启动前端文件监听线程
+_watch_frontend()
+  └─ 每 0.5s 检测 static/ 文件 MD5 变化 → 触发 reload-frontend
+_hash_file()
+  └─ 计算文件 MD5 哈希（嵌套在 _watch_frontend 内）
+```
+
+### `app/config/model.py`
+
+```
+default_advanced()
+  └─ 返回 advanced 字段的默认值 dict（供存储层持久化使用）
+```
+
+### `app/config/prompts.py`
+
+```
+get_system_prompt()
+  └─ 获取系统提示词模板字符串
+```
+
+### `app/context/context.py`
+
+```
+_get_encoding()
+  └─ 根据模型名返回 tiktoken 编码名称（默认 cl100k_base）
+count_context_tokens()
+  └─ 精确计算构建上下文后的总 token 数（system prompt + 历史消息 + thinking）
+build_context()
+  └─ 构建完整对话上下文消息列表（SystemMessage + 历史 + 工具/技能描述注入）
+_dump_context()
+  └─ 将上下文消息列表输出到 app/context/context.json（调试用）
+```
+
+### `app/context/skill_loader.py`
+
+```
+_parse_skill_md()
+  └─ 解析 skill.md 文件（YAML front matter + Markdown body），返回 SkillSpec
+_parse_parameters()
+  └─ 解析参数定义（优先 YAML JSON Schema，回退 Markdown 参数表）
+_parse_parameters_table()
+  └─ 从 Markdown 参数表解析为 OpenAI Tool JSON Schema
+_extract_field()
+  └─ 从 YAML front matter 中提取单行字段值
+_extract_multiline_field()
+  └─ 从 YAML front matter 中提取多行字段值（缩进块）
+_discover_skills()
+  └─ 扫描 app/skills/ 下所有子文件夹，读取 skill.md
+get_skills()
+  └─ 获取所有已加载的技能（按名称索引，懒加载 + 缓存）
+get_skill()
+  └─ 按名称获取单个技能元数据
+list_skills()
+  └─ 返回技能列表（用于 API 输出，仅含 name/description/icon/category）
+build_openai_tools()
+  └─ 构建 OpenAI Tool Calling 格式的 tools 列表（排除 bash）
+```
+
+### `app/context/tool_loader.py`
+
+```
+load_all_tools()
+  └─ 扫描 app/tools/ 下所有模块，调用 get_tools() 合并返回所有工具
+get_tool_descriptions()
+  └─ 将 BaseTool 列表格式化为 system prompt 可用的描述文本
+get_skill_descriptions()
+  └─ 将 skills 目录下的技能描述格式化为 system prompt 可用的文本（排除 bash）
+```
+
+### `app/services/agent.py`
+
+```
+create_llm()
+  └─ 创建 ChatOpenAI 实例（使用全局 Config）
+call_model()
+  └─ LangGraph 节点：调用 LLM 生成回复
+should_continue()
+  └─ LangGraph 条件边：判断是否继续循环（始终返回 END）
+build_agent()
+  └─ 构建 LangGraph StateGraph（单节点 agent → END）
+```
+
+### `app/services/chat_service.py`
+
+```
+_patched_convert_delta_to_message_chunk()
+  └─ Monkey-patch：让 langchain_openai 保留 reasoning_content 到 additional_kwargs
+build_thinking_kwargs()
+  └─ 根据 advanced 配置构造 reasoning_effort / model_kwargs / extra_body
+resolve_llm_config()
+  └─ 从 model_store 或全局 Config 解析 LLM 参数（model/api_key/base_url/advanced）
+_read_skill_md()
+  └─ 读取 skill.md 正文（去掉 YAML front matter）
+_build_llm()
+  └─ 构建 ChatOpenAI 实例 + bind_tools（技能工具 + 系统工具），返回 (llm, system_tools)
+_ensure_title()
+  └─ 首次消息自动生成会话标题（取前 20 字符）
+_execute_tool()
+  └─ 执行工具调用（优先级：系统工具 → executor.py → skill.md 回退）
+run_chat()
+  └─ 非流式聊天编排：标题生成 → 消息写入 → LLM 调用 → Tool Calling → fallback
+run_chat_stream()
+  └─ 流式聊天编排：SSE 逐块输出 token/thinking/tool_call/tool_result/done/error
+```
+
+### `app/storage/models.py`
+
+```
+_mask_key()
+  └─ 密钥脱敏：前 4 + 后 2 截断，中间用 **** 占位
+ModelConfigStore._normalize_advanced()
+  └─ 兜底规整 advanced 字段为标准结构，缺字段自动补默认值
+ModelConfigStore._item_out()
+  └─ 统一 list/get 返回的字段形态（剥离明文 key、补全 advanced）
+ModelConfigStore.__init__()
+  └─ 初始化存储路径 + 线程锁 + 确保文件存在
+ModelConfigStore._ensure_file()
+  └─ 确保 models.json 存在，不存在则用 .env 播种
+ModelConfigStore._seed_from_env()
+  └─ 用环境变量生成默认模型条目
+ModelConfigStore._read()
+  └─ 读取 models.json，异常时重建
+ModelConfigStore._write()
+  └─ 原子写入 models.json（.tmp 替换）
+ModelConfigStore.list_models()
+  └─ 返回模型列表（含密钥脱敏 + is_default 标记）
+ModelConfigStore.get_model()
+  └─ 按 uid 获取单个模型（可选包含明文密钥）
+ModelConfigStore.get_default()
+  └─ 获取默认模型（无默认时返回第一个）
+ModelConfigStore.create_model()
+  └─ 新增模型配置（可选设为默认）
+ModelConfigStore.update_model()
+  └─ 更新模型配置（advanced 合并而非替换）
+ModelConfigStore.delete_model()
+  └─ 删除模型（若删除默认则自动切换）
+ModelConfigStore.set_default()
+  └─ 设置指定模型为默认
+```
+
+### `app/storage/session_store.py`
+
+```
+SessionManager.__init__()
+  └─ 初始化存储目录 + 线程锁 + 内存缓存 + 启动加载
+SessionManager._session_file()
+  └─ 返回会话 JSON 文件路径
+SessionManager._load_all()
+  └─ 启动时加载所有会话文件到内存（按 mtime 倒序）
+SessionManager._save()
+  └─ 将会话写入磁盘 JSON 文件
+SessionManager.create()
+  └─ 创建新会话（时间戳 ID）
+SessionManager.list_all()
+  └─ 返回所有会话列表（含预览、消息数）
+SessionManager.get()
+  └─ 获取指定会话完整信息
+SessionManager.delete()
+  └─ 删除会话（内存 + 磁盘文件）
+SessionManager.rename()
+  └─ 重命名会话标题
+SessionManager.exists()
+  └─ 检查会话是否存在
+SessionManager.add_message()
+  └─ 追加消息并持久化（支持 tool_calls / tool_call_id / thinking）
+SessionManager.get_messages()
+  └─ 获取会话所有消息列表
+```
+
+### `app/tools/system.py`
+
+```
+bash()
+  └─ @tool 装饰器：在 Windows 上执行 PowerShell 命令并返回结果
+get_system_tools()
+  └─ 返回所有系统内置工具列表
+get_tools()
+  └─ tool_loader 统一接口：返回本模块定义的所有工具
+```
+
+## 12. 其他资产
 
 - **前端** `app/static/`（index.html / app.js / styles.css / i18n.js）
 - **视觉资产** `weights/`（YOLO 图标检测 + PaddleOCR，未接入主流程）
