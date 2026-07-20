@@ -435,16 +435,17 @@
                             </div>
                         </div>
                     `;
-                    thinkingRow = wrapper.querySelector('.tool-row');
+                    const toolRow = wrapper.querySelector('.tool-row');
                     thinkingContentEl = wrapper.querySelector('.tool-row-content');
-                    // 点击头部切换展开/折叠
-                    const header = thinkingRow.querySelector('.tool-row-header');
+                    // 点击头部切换展开/折叠 — 使用局部变量 toolRow 而非 thinkingRow
+                    const header = toolRow.querySelector('.tool-row-header');
                     header.addEventListener('click', () => {
-                        const expanded = thinkingRow.dataset.expanded === 'true';
-                        thinkingRow.dataset.expanded = expanded ? 'false' : 'true';
-                        const details = thinkingRow.querySelector('.tool-row-details');
+                        const expanded = toolRow.dataset.expanded === 'true';
+                        toolRow.dataset.expanded = expanded ? 'false' : 'true';
+                        const details = toolRow.querySelector('.tool-row-details');
                         if (details) details.hidden = expanded;
                     });
+                    thinkingRow = toolRow;
                     messagesEl.appendChild(wrapper);
                     scrollToBottom();
                 }
