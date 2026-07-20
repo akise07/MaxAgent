@@ -1,11 +1,14 @@
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
+"""LangGraph Agent 构造：状态定义、LLM 工厂、节点函数与图装配。
+"""
 from typing import Annotated, TypedDict
 
-from config import Config
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
 
+from app.config.settings import Config
+
+# 模块级配置实例：与原 main.py 行为一致，import 本模块即触发 load_dotenv
 config = Config()
 
 
@@ -43,20 +46,3 @@ def build_agent() -> StateGraph:
     graph.add_edge("agent", END)
 
     return graph.compile()
-
-
-def main():
-    agent = build_agent()
-
-    messages = [
-        SystemMessage(content="你是一个有帮助的AI助手。"),
-        HumanMessage(content="你好，请用一句话介绍你自己。"),
-    ]
-
-    result = agent.invoke({"messages": messages})
-    for msg in result["messages"]:
-        print(f"[{msg.type}]: {msg.content}")
-
-
-if __name__ == "__main__":
-    main()

@@ -11,19 +11,11 @@ from typing import Any
 from app.config.model import THINKING_LEVELS, default_advanced
 
 
-def _default_advanced() -> dict[str, Any]:
-    """模型高级配置的默认结构（与 UI 字段一一对应）。"""
-    return {
-        "tool_calling": False,
-        "image_input": False,
-        "thinking_mode": False,
-        "thinking_only": False,
-        "allow_disable_thinking": False,
-        "default_thinking_intensity": "高",
-        "supported_thinking_intensities": ["高"],
-        "context_input": 0,
-        "context_output": 0,
-    }
+def _mask_key(key: str) -> str:
+    """密钥脱敏：前 4 + 后 2 截断，中间用 **** 占位。短密钥统一返回 ****。"""
+    if len(key) > 6:
+        return key[:4] + "****" + key[-2:]
+    return "****"
 
 
 class ModelConfigStore:
@@ -41,19 +33,15 @@ class ModelConfigStore:
         supported = base.get("supported_thinking_intensities") or []
         supported = [s for s in supported if s in THINKING_LEVELS]
         if not supported:
-            supported = ["高"]
+            supported = ["high"]
         base["supported_thinking_intensities"] = list(dict.fromkeys(supported))
         if base.get("default_thinking_intensity") not in THINKING_LEVELS:
-            base["default_thinking_intensity"] = "高"
+            base["default_thinking_intensity"] = "high"
         # 数值字段兜底
         try:
-            base["context_input"] = int(base.get("context_input") or 0)
+            base["context_size"] = int(base.get("context_size") or 0)
         except (TypeError, ValueError):
-            base["context_input"] = 0
-        try:
-            base["context_output"] = int(base.get("context_output") or 0)
-        except (TypeError, ValueError):
-            base["context_output"] = 0
+            base["context_size"] = 0
         return base
 
     def _item_out(self, item: dict[str, Any], is_default: bool, include_key: bool) -> dict[str, Any]:
@@ -69,7 +57,8 @@ class ModelConfigStore:
         return out
 
     def __init__(self, config_path: Path | None = None) -> None:
-        project_root = Path(__file__).resolve().parents[1]
+        # app/storage/models.py → parents[2] = 项目根 MaxAgent/
+        project_root = Path(__file__).resolve().parents[2]
         home = project_root / "home"
         self._path = config_path or (home / "config" / "models.json")
         self._lock = threading.Lock()
@@ -85,12 +74,12 @@ class ModelConfigStore:
         """用 .env / 环境变量生成默认模型条目。"""
         return {
             "id": str(uuid.uuid4()),
-            "name": os.getenv("VISIONAGENT_MODEL_NAME", "hy3"),
+            "name": os.getenv("MAXAGENT_MODEL_NAME", "hy3"),
             "api_endpoint": os.getenv(
-                "VISIONAGENT_API_ENDPOINT", "http://localhost:8111/v1"
+                "MAXAGENT_API_ENDPOINT", "http://localhost:8111/v1"
             ),
-            "api_key": os.getenv("VISIONAGENT_API_KEY", ""),
-            "model_id": os.getenv("VISIONAGENT_MODEL_NAME", "hy3"),
+            "api_key": os.getenv("MAXAGENT_API_KEY", ""),
+            "model_id": os.getenv("MAXAGENT_MODEL_NAME", "hy3"),
             "advanced": default_advanced(),
         }
 
@@ -124,10 +113,7 @@ class ModelConfigStore:
                 if mask_key:
                     item = dict(m)
                     if item.get("api_key"):
-                        key = item["api_key"]
-                        item["api_key_masked"] = (
-                            key[:4] + "****" + key[-2:] if len(key) > 6 else "****"
-                        )
+                        item["api_key_masked"] = _mask_key(item["api_key"])
                         item["has_api_key"] = True
                         del item["api_key"]
                     else:
