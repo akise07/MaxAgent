@@ -31,6 +31,7 @@ const translations = {
       calling: '调用工具',
       arguments: '参数',
       result: '结果',
+      thinking: '深度思考',
     },
     common: { loading: '加载中...', request_failed: '请求失败' },
     chat: {
@@ -127,6 +128,7 @@ const translations = {
       calling: 'Calling tool',
       arguments: 'Arguments',
       result: 'Result',
+      thinking: 'Deep Thinking',
     },
     common: { loading: 'Loading...', request_failed: 'Request failed' },
     chat: {

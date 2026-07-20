@@ -272,7 +272,7 @@
     }
 
     async function sendMessageStream(conversationId, message, modelId, callbacks) {
-        const { onToken, onToolCall, onToolResult, onDone } = callbacks;
+        const { onToken, onThinking, onToolCall, onToolResult, onDone } = callbacks;
         try {
             setStatus('busy', t('chat.thinking'));
             const response = await fetch('/api/chat/stream', {
@@ -310,6 +310,9 @@
                                 fullReply += event.content;
                                 onToken(event.content);
                                 break;
+                            case 'thinking':
+                                onThinking(event.content);
+                                break;
                             case 'tool_call':
                                 onToolCall(event);
                                 break;
@@ -337,10 +340,24 @@
     function makeStreamCallbacks(messagesEl, onFinish) {
         // 创建公共的流式回调，用于 handleSend 和 submitNewTask
         let assistantBubble = null;
+        let thinkingRow = null;
+        let thinkingContentEl = null;
         return {
             onToken: (token) => {
                 if (!assistantBubble) {
                     removeTyping();
+                    // 思考结束，开始输出正式内容：停止 spinner，移除蓝色边框
+                    const activeRow = thinkingRow || messagesEl.querySelector('.thinking-row .tool-row.thinking-active');
+                    if (activeRow) {
+                        const spinner = activeRow.querySelector('.thinking-spinner');
+                        if (spinner) {
+                            // 替换 spinner 为静态 SVG 图标
+                            const iconSpan = spinner.parentElement;
+                            spinner.remove();
+                            iconSpan.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/></svg>`;
+                        }
+                        activeRow.classList.remove('thinking-active');
+                    }
                     const div = document.createElement('div');
                     div.className = 'message assistant';
                     div.innerHTML = '<div class="bubble"></div>';
@@ -349,6 +366,45 @@
                     scrollToBottom();
                 }
                 assistantBubble.innerHTML = formatContent(assistantBubble.textContent + token);
+                scrollToBottom();
+            },
+            onThinking: (content) => {
+                removeTyping();
+                if (!thinkingRow) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'thinking-row';
+                    wrapper.innerHTML = `
+                        <div class="tool-row thinking-active" data-expanded="true">
+                            <div class="tool-row-header">
+                                <span class="tool-row-icon">
+                                    <span class="thinking-spinner"></span>
+                                </span>
+                                <span class="tool-row-title">${escapeHtml(t('tool.thinking'))}</span>
+                                <span class="tool-row-arrow">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                </span>
+                            </div>
+                            <div class="tool-row-details">
+                                <pre class="tool-row-content"></pre>
+                            </div>
+                        </div>
+                    `;
+                    thinkingRow = wrapper.querySelector('.tool-row');
+                    thinkingContentEl = wrapper.querySelector('.tool-row-content');
+                    // 点击头部切换展开/折叠
+                    const header = thinkingRow.querySelector('.tool-row-header');
+                    header.addEventListener('click', () => {
+                        const expanded = thinkingRow.dataset.expanded === 'true';
+                        thinkingRow.dataset.expanded = expanded ? 'false' : 'true';
+                        const details = thinkingRow.querySelector('.tool-row-details');
+                        if (details) details.hidden = expanded;
+                    });
+                    messagesEl.appendChild(wrapper);
+                    scrollToBottom();
+                }
+                thinkingContentEl.textContent += content;
                 scrollToBottom();
             },
             onToolCall: (event) => {
@@ -362,6 +418,17 @@
             },
             onDone: (reply, error) => {
                 removeTyping();
+                // 如果 thinking 行还在（没有 token 输出），停止 spinner 并移除蓝色边框
+                const activeRow = thinkingRow || messagesEl.querySelector('.thinking-row .tool-row.thinking-active');
+                if (activeRow) {
+                    const spinner = activeRow.querySelector('.thinking-spinner');
+                    if (spinner) {
+                        const iconSpan = spinner.parentElement;
+                        spinner.remove();
+                        iconSpan.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/></svg>`;
+                    }
+                    activeRow.classList.remove('thinking-active');
+                }
                 if (error) {
                     appendMessage('assistant', error);
                 } else if (!assistantBubble && reply) {
@@ -467,11 +534,47 @@
                 messagesEl.appendChild(row);
                 return;
             }
+            // assistant 消息含 thinking 内容
+            if (msg.role === 'assistant' && msg.thinking) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'thinking-row';
+                wrapper.innerHTML = `
+                    <div class="tool-row" data-expanded="true">
+                        <div class="tool-row-header">
+                            <span class="tool-row-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/>
+                                </svg>
+                            </span>
+                            <span class="tool-row-title">${escapeHtml(t('tool.thinking'))}</span>
+                            <span class="tool-row-arrow">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            </span>
+                        </div>
+                        <div class="tool-row-details">
+                            <pre class="tool-row-content">${escapeHtml(msg.thinking)}</pre>
+                        </div>
+                    </div>
+                `;
+                const thinkingRow = wrapper.querySelector('.tool-row');
+                const header = thinkingRow.querySelector('.tool-row-header');
+                header.addEventListener('click', () => {
+                    const expanded = thinkingRow.dataset.expanded === 'true';
+                    thinkingRow.dataset.expanded = expanded ? 'false' : 'true';
+                    const details = thinkingRow.querySelector('.tool-row-details');
+                    if (details) details.hidden = expanded;
+                });
+                messagesEl.appendChild(wrapper);
+            }
             // 普通消息
-            const div = document.createElement('div');
-            div.className = `message ${msg.role}`;
-            div.innerHTML = `<div class="bubble">${formatContent(msg.content)}</div>`;
-            messagesEl.appendChild(div);
+            if (msg.role === 'assistant' || msg.role === 'user') {
+                const div = document.createElement('div');
+                div.className = `message ${msg.role}`;
+                div.innerHTML = `<div class="bubble">${formatContent(msg.content)}</div>`;
+                messagesEl.appendChild(div);
+            }
         });
         scrollToBottom();
     }

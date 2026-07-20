@@ -142,6 +142,7 @@ class SessionManager:
         *,
         tool_calls: list[dict] | None = None,
         tool_call_id: str | None = None,
+        thinking: str | None = None,
     ) -> bool:
         """向会话追加消息并持久化。
 
@@ -150,6 +151,7 @@ class SessionManager:
             content: 消息内容
             tool_calls: assistant 消息的工具调用列表（可选）
             tool_call_id: tool 消息对应的工具调用 ID（可选）
+            thinking: assistant 消息的思维链内容（可选）
         """
         with self._lock:
             if conversation_id not in self._conversations:
@@ -159,6 +161,8 @@ class SessionManager:
                 msg["tool_calls"] = tool_calls
             if tool_call_id:
                 msg["tool_call_id"] = tool_call_id
+            if thinking:
+                msg["thinking"] = thinking
             self._conversations[conversation_id].append(msg)
             self._save(conversation_id)
             # 更新顺序（最近活跃的排在最前）

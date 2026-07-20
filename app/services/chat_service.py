@@ -22,6 +22,24 @@ import re
 from typing import AsyncGenerator
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+
+# ---- Monkey-patch: 让 langchain_openai 保留 reasoning_content ----
+# 必须在 ChatOpenAI 导入之前 patch，确保 _convert_delta_to_message_chunk 已被替换
+import langchain_openai.chat_models.base as _lc_base
+_orig_convert = _lc_base._convert_delta_to_message_chunk
+
+def _patched_convert_delta_to_message_chunk(_dict, default_class):
+    chunk = _orig_convert(_dict, default_class)
+    reasoning = _dict.get("reasoning_content")
+    if reasoning and isinstance(chunk, AIMessageChunk):
+        extra = dict(chunk.additional_kwargs)
+        extra["reasoning_content"] = reasoning
+        chunk.additional_kwargs = extra
+    return chunk
+
+_lc_base._convert_delta_to_message_chunk = _patched_convert_delta_to_message_chunk
+# ---- End monkey-patch ----
+
 from langchain_openai import ChatOpenAI
 
 from app.config.model import THINKING_LEVELS
@@ -33,25 +51,27 @@ from app.storage.session_store import SessionManager
 from app.schemas.requests import ChatRequest
 
 
-def build_thinking_kwargs(advanced: dict | None) -> tuple[str | None, dict]:
+def build_thinking_kwargs(advanced: dict | None) -> tuple[str | None, dict, dict | None]:
     """根据模型的 advanced 配置，构造透传给 LLM 的参数。
 
-    返回 (reasoning_effort, model_kwargs)：
+    返回 (reasoning_effort, model_kwargs, extra_body)：
     - reasoning_effort：OpenAI 顶层参数，值为 high / None（None 表示不设置）
     - model_kwargs：传给底层的额外参数，例如 Qwen 风格的 chat_template_kwargs
+    - extra_body：传给底层的额外请求体参数，例如 thinking 启用
 
     - thinking_mode 开启：把 default_thinking_intensity 直接作为 reasoning_effort
     - thinking_only / allow_disable_thinking 开启：同时设置
       chat_template_kwargs.enable_thinking=True（Qwen 风格，常规 API 忽略）
     """
     if not advanced or not advanced.get("thinking_mode"):
-        return None, {}
+        return None, {}, None
     intensity = advanced.get("default_thinking_intensity") or "high"
     effort = intensity if intensity in THINKING_LEVELS else "high"
     model_kwargs: dict = {}
+    extra_body: dict | None = {"thinking": {"type": "enabled"}}
     if advanced.get("thinking_only") or advanced.get("allow_disable_thinking"):
         model_kwargs["chat_template_kwargs"] = {"enable_thinking": True}
-    return effort, model_kwargs
+    return effort, model_kwargs, extra_body
 
 
 def resolve_llm_config(
@@ -102,7 +122,7 @@ def _build_llm(
         advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
     if req.thinking_intensity:
         advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
-    reasoning_effort, model_kwargs = build_thinking_kwargs(advanced_cfg)
+    reasoning_effort, model_kwargs, extra_body = build_thinking_kwargs(advanced_cfg)
 
     llm_kwargs: dict = {
         "model": llm_cfg["model"],
@@ -111,6 +131,11 @@ def _build_llm(
     }
     if reasoning_effort is not None:
         llm_kwargs["reasoning_effort"] = reasoning_effort
+    if extra_body:
+        if model_kwargs:
+            model_kwargs["extra_body"] = extra_body
+        else:
+            model_kwargs = {"extra_body": extra_body}
     if model_kwargs:
         llm_kwargs["model_kwargs"] = model_kwargs
 
@@ -240,11 +265,20 @@ async def run_chat_stream(
 
         # ---- 第一轮流式调用 ----
         collected_content = ""
+        collected_thinking = ""
         collected_tool_calls: list[dict] = []
 
         async for chunk in llm.astream(messages):
             if not isinstance(chunk, AIMessageChunk):
                 continue
+
+            # 提取 reasoning_content（思维链）
+            reasoning = chunk.additional_kwargs.get("reasoning_content", "") if chunk.additional_kwargs else ""
+
+            if reasoning:
+                collected_thinking += reasoning
+                yield f"data: {json.dumps({'type': 'thinking', 'content': reasoning})}\n\n"
+
             if chunk.content:
                 collected_content += chunk.content
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
@@ -294,6 +328,7 @@ async def run_chat_stream(
             session_manager.add_message(
                 req.conversation_id, "assistant", collected_content or "",
                 tool_calls=[{"name": tc["name"], "args": tc["args"], "id": tc["id"]} for tc in parsed_tool_calls],
+                thinking=collected_thinking or None,
             )
 
             # 加入内存消息列表（用于第二轮调用）
@@ -312,7 +347,13 @@ async def run_chat_stream(
 
             # ---- 第二轮流式调用 ----
             collected_content = ""
+            collected_thinking = ""
             async for chunk in llm.astream(messages):
+                # 提取 reasoning_content（思维链）
+                reasoning = chunk.additional_kwargs.get("reasoning_content", "") if isinstance(chunk, AIMessageChunk) and chunk.additional_kwargs else ""
+                if reasoning:
+                    collected_thinking += reasoning
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': reasoning})}\n\n"
                 if isinstance(chunk, AIMessageChunk) and chunk.content:
                     collected_content += chunk.content
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
@@ -325,7 +366,10 @@ async def run_chat_stream(
                 if hasattr(msg, "content") and msg.content:
                     reply = msg.content
 
-        session_manager.add_message(req.conversation_id, "assistant", reply or "抱歉，我没有生成有效的回复。")
+        session_manager.add_message(
+            req.conversation_id, "assistant", reply or "抱歉，我没有生成有效的回复。",
+            thinking=collected_thinking or None,
+        )
         yield f"data: {json.dumps({'type': 'done', 'content': reply})}\n\n"
 
     except Exception as e:

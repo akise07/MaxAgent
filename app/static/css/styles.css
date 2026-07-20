@@ -1896,3 +1896,68 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     max-height: 240px;
     overflow-y: auto;
 }
+
+/* ===== Thinking Row (思维链) ===== */
+.thinking-row {
+    margin: 6px 0;
+}
+
+.thinking-row .tool-row {
+    border-color: transparent;
+    border-style: dashed;
+    opacity: 0.85;
+    transition: border-color 0.3s;
+}
+
+.thinking-row .tool-row.thinking-active {
+    border-color: var(--accent);
+}
+
+.thinking-row .tool-row-header {
+    padding: 6px 14px;
+}
+
+.thinking-row .tool-row-icon {
+    color: var(--accent);
+}
+
+.thinking-row .tool-row-title {
+    font-size: 13px;
+    color: var(--accent);
+}
+
+.thinking-row .tool-row-details {
+    background: var(--bg-secondary, rgba(0, 120, 212, 0.05));
+    padding: 8px 14px;
+}
+
+.thinking-row .tool-row-content {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--code-bg, rgba(0, 0, 0, 0.15));
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.6;
+}
+
+.thinking-row .thinking-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: thinking-spin 0.8s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+@keyframes thinking-spin {
+    to { transform: rotate(360deg); }
+}
