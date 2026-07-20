@@ -25,8 +25,6 @@ router = APIRouter()
 # 全局对象（由 app.py 启动时注入）
 _session_manager: SessionManager | None = None
 """会话管理器"""
-_agent = None 
-"""聊天代理"""
 _config: Config | None = None
 """配置"""
 _model_store: ModelConfigStore | None = None
@@ -39,14 +37,12 @@ _HOME_DIR = _PROJECT_ROOT / "home"
 
 def init_dependencies(
     session_manager: SessionManager,
-    agent,
     config: Config,
     model_store: ModelConfigStore | None = None,
 ) -> None:
     """由 app.py 在启动时调用，注入依赖。"""
-    global _session_manager, _agent, _config, _model_store
+    global _session_manager, _config, _model_store
     _session_manager = session_manager
-    _agent = agent
     _config = config
     _model_store = model_store
 
@@ -102,7 +98,7 @@ async def open_home():
 @router.post("/api/chat")
 async def chat(req: ChatRequest):
     """处理用户消息：调用 LLM 生成回复。"""
-    if _session_manager is None or _agent is None:
+    if _session_manager is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
     if _config is None:
         raise HTTPException(status_code=500, detail="配置未初始化")
@@ -113,7 +109,6 @@ async def chat(req: ChatRequest):
     return chat_service.run_chat(
         req,
         session_manager=_session_manager,
-        agent=_agent,
         model_store=_model_store,
         config=_config,
     )
@@ -165,7 +160,7 @@ async def get_context_usage(conversation_id: str, model_id: str | None = None):
 @router.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest):
     """流式聊天：以 SSE 格式逐块输出 token。"""
-    if _session_manager is None or _agent is None:
+    if _session_manager is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
     if _config is None:
         raise HTTPException(status_code=500, detail="配置未初始化")
@@ -177,7 +172,6 @@ async def chat_stream(req: ChatRequest):
         chat_service.run_chat_stream(
             req,
             session_manager=_session_manager,
-            agent=_agent,
             model_store=_model_store,
             config=_config,
         ),

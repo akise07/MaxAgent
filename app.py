@@ -18,7 +18,6 @@ from app.api import models as models_api
 from app.api import skills as skills_api
 from app.config.settings import Config
 from app.api.debug import disable_hot_reload, enable_hot_reload
-from app.services.agent import build_agent
 from app.storage.models import ModelConfigStore
 from app.storage.session_store import SessionManager
 
@@ -46,12 +45,12 @@ async def _access_log(request: Request, call_next) -> Response:
 static_dir = os.path.join(os.path.dirname(__file__), "app", "static")
 appFastAPI.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# 初始化依赖（会话管理 + Agent + 配置 + 模型列表）
+# 初始化依赖（会话管理 + 配置 + 模型列表）
+# Agent 由 chat_service 内部按需构建（每次请求根据模型配置动态创建）
 session_manager = SessionManager()
-agent = build_agent()
 config = Config()
 model_store = ModelConfigStore()
-chat_api.init_dependencies(session_manager, agent, config, model_store)
+chat_api.init_dependencies(session_manager, config, model_store)
 conversations.init_dependencies(session_manager)
 models_api.init_store(model_store)
 

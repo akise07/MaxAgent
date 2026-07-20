@@ -187,7 +187,7 @@ POST /api/chat
   ▼
 app/api/chat.py: chat()
   ├─ 校验依赖注入、会话存在性（HTTPException）
-  └─ chat_service.run_chat(req, session_manager, agent, model_store, config)
+  └─ chat_service.run_chat(req, session_manager, model_store, config)
        │
        ▼
   app/services/chat_service.py: run_chat()
@@ -204,12 +204,43 @@ app/api/chat.py: chat()
        │   ├─ 基础 system prompt
        │   ├─ + get_tool_descriptions(system_tools)  ← 系统工具描述
        │   └─ + get_skill_descriptions()  ← 技能描述（排除 bash）
-       ├─ 第一轮 invoke → LLM 返回 tool_calls（或直接回复）
-       │   ├─ 无 tool_calls → 直接使用回复内容
-       │   └─ 有 tool_calls → 执行工具 → ToolMessage 追加到消息列表
-       │       └─ 第二轮 invoke → LLM 根据工具结果生成最终回复
-       ├─ 失败 fallback: agent.invoke()  ← LangGraph 路径
+       ├─ build_agent(llm, _execute_tool)  ← 构建 LangGraph Agent Loop
+       │   │
+       │   ▼
+       │   ┌─────────────────────────────────────────────────┐
+       │   │         LangGraph Agent Loop                     │
+       │   │                                                 │
+       │   │   START → agent（LLM 调用）                      │
+       │   │              │                                  │
+       │   │              ├─ 无 tool_calls → END              │
+       │   │              └─ 有 tool_calls → tools（执行工具） │
+       │   │                    │                            │
+       │   │                    └─ agent（继续思考）           │
+       │   │                         ↑_____________|         │
+       │   │                                                 │
+       │   │   最大迭代 10 次，防止无限循环                    │
+       │   └─────────────────────────────────────────────────┘
+       │
        └─ 写入助手回复（session_manager.add_message，含 thinking 字段）
+```
+
+### LangGraph Agent Loop 架构
+
+```
+app/services/agent.py: build_agent(llm, tool_executor)
+  │
+  ├─ AgentState: { messages, iteration_count }
+  │
+  ├─ 节点：
+  │   ├─ agent  ← _call_model(state, llm)：调用 LLM，返回 AIMessage
+  │   └─ tools  ← _execute_tools(state, tool_executor)：执行 tool_calls，返回 ToolMessage[]
+  │
+  └─ 边：
+      ├─ START → agent
+      ├─ agent → 条件边 _should_continue()
+      │   ├─ 有 tool_calls 且未超限 → tools
+      │   └─ 无 tool_calls 或超限 → END
+      └─ tools → agent（循环）
 ```
 
 ### 思维链（reasoning_content）数据流
@@ -242,6 +273,11 @@ LLM 返回的 tool_calls 示例：
      → 通过 skill.dir_path 定位，用 importlib.util.spec_from_file_location
        从绝对路径加载 executor.py（不依赖 app.skills 包名）
   3. 回退到读取 skill.md 返回文档内容
+
+多轮工具调用：
+  - LangGraph agent loop 自动处理多轮 tool calling
+  - 每轮：agent 思考 → 调用工具 → tools 执行 → agent 继续思考
+  - 直到 LLM 不再请求工具或达到最大迭代次数（10 次）
 
 两段式思考：
   - 第一轮 thinking：决定调用工具前的推理过程
@@ -364,14 +400,14 @@ wait_for_server()
 create_window()
   └─ 创建 pywebview 原生窗口（1200×800，最小 900×600）
 main()
-  └─ 应用主入口：启动服务器 → 创建窗口 → 进入 GUI 事件循环
+  └─ 应用主入口：初始化依赖 → 启动服务器 → 创建窗口 → 进入 GUI 事件循环
 ```
 
 ### `app/api/chat.py`
 
 ```
 init_dependencies()
-  └─ 注入全局依赖（SessionManager / Agent / Config / ModelConfigStore）
+  └─ 注入全局依赖（SessionManager / Config / ModelConfigStore）
 _open_in_file_manager()
   └─ 用系统文件管理器打开指定目录（跨平台）
 get_config()
@@ -518,14 +554,14 @@ get_skill_descriptions()
 ### `app/services/agent.py`
 
 ```
-create_llm()
-  └─ 创建 ChatOpenAI 实例（使用全局 Config）
-call_model()
-  └─ LangGraph 节点：调用 LLM 生成回复
-should_continue()
-  └─ LangGraph 条件边：判断是否继续循环（始终返回 END）
+_call_model()
+  └─ Agent 节点：调用 LLM 生成回复或工具调用请求（含迭代计数）
+_execute_tools()
+  └─ Tools 节点：执行 LLM 请求的工具调用，返回 ToolMessage 列表
+_should_continue()
+  └─ 条件边：有 tool_calls 且未超限 → tools，否则 → END
 build_agent()
-  └─ 构建 LangGraph StateGraph（单节点 agent → END）
+  └─ 构建 LangGraph Agent Loop（agent 节点 + tools 节点 + 条件边循环，最大 10 次迭代）
 ```
 
 ### `app/services/chat_service.py`
@@ -546,9 +582,9 @@ _ensure_title()
 _execute_tool()
   └─ 执行工具调用（优先级：系统工具 → executor.py → skill.md 回退）
 run_chat()
-  └─ 非流式聊天编排：标题生成 → 消息写入 → LLM 调用 → Tool Calling → fallback
+  └─ 非流式聊天编排：标题生成 → 消息写入 → LangGraph Agent Loop → 提取最终回复
 run_chat_stream()
-  └─ 流式聊天编排：SSE 逐块输出 token/thinking/tool_call/tool_result/done/error
+  └─ 流式聊天编排：通过 agent.astream_events() 逐块输出 token/thinking/tool_call/tool_result/done/error
 ```
 
 ### `app/storage/models.py`
