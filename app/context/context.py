@@ -51,7 +51,11 @@ def build_context(
         if role == "user":
             messages.append(HumanMessage(content=content))
         elif role == "assistant":
-            messages.append(AIMessage(content=content))
+            thinking = msg.get("thinking")
+            kwargs = {}
+            if thinking:
+                kwargs["additional_kwargs"] = {"reasoning_content": thinking}
+            messages.append(AIMessage(content=content, **kwargs))
         # system role 忽略（已由 SystemMessage 注入）
 
     return messages
