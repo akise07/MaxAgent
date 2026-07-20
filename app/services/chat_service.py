@@ -46,6 +46,7 @@ from app.config.model import THINKING_LEVELS
 from app.config.settings import Config
 from app.context.context import build_context
 from app.context.skill_loader import build_openai_tools, get_skill
+from app.context.tool_loader import load_all_tools
 from app.storage.models import ModelConfigStore
 from app.storage.session_store import SessionManager
 from app.schemas.requests import ChatRequest
@@ -140,10 +141,13 @@ def _build_llm(
         llm_kwargs["model_kwargs"] = model_kwargs
 
     tools = build_openai_tools()
+    system_tools = load_all_tools()
     llm = ChatOpenAI(**llm_kwargs)
     if tools:
         llm = llm.bind_tools(tools)
-    return llm
+    if system_tools:
+        llm = llm.bind_tools(system_tools)
+    return llm, system_tools
 
 
 def _ensure_title(req, session_manager: SessionManager) -> None:
@@ -157,15 +161,21 @@ def _ensure_title(req, session_manager: SessionManager) -> None:
 def _execute_tool(tool_name: str, arguments: dict) -> str:
     """执行工具调用，返回结果文本。
 
-    通过技能目录下的 executor.py 动态导入执行器，
-    不依赖项目包名（app.skills），技能脚本与项目完全隔离。
-    如果 executor.py 不存在则回退到读取 skill.md 返回文档内容。
+    优先级：
+    1. 系统内置工具（app/tools/ 下的 @tool 装饰器工具）
+    2. 技能目录下的 executor.py 动态导入
+    3. 回退到读取 skill.md 返回文档内容
     """
+    # 1. 尝试系统内置工具
+    for t in load_all_tools():
+        if t.name == tool_name:
+            return t.invoke(arguments)
+
     skill = get_skill(tool_name)
     if skill is None:
         return f"未知工具：{tool_name}"
 
-    # 通过技能目录绝对路径动态导入 executor.py
+    # 2. 通过技能目录绝对路径动态导入 executor.py
     executor_path = os.path.join(skill.dir_path, "executor.py")
     if os.path.isfile(executor_path):
         try:
@@ -208,8 +218,8 @@ def run_chat(
     session_manager.add_message(req.conversation_id, "user", req.message)
 
     try:
-        messages = build_context(req.conversation_id, session_manager)
-        llm = _build_llm(req, model_store, config)
+        llm, system_tools = _build_llm(req, model_store, config)
+        messages = build_context(req.conversation_id, session_manager, tools=system_tools, include_skills=True)
 
         # 第一轮调用：LLM 可能返回 tool_calls
         response = llm.invoke(messages)
@@ -260,8 +270,8 @@ async def run_chat_stream(
     session_manager.add_message(req.conversation_id, "user", req.message)
 
     try:
-        messages = build_context(req.conversation_id, session_manager)
-        llm = _build_llm(req, model_store, config)
+        llm, system_tools = _build_llm(req, model_store, config)
+        messages = build_context(req.conversation_id, session_manager, tools=system_tools, include_skills=True)
 
         # ---- 第一轮流式调用 ----
         collected_content = ""

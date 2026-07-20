@@ -99,6 +99,8 @@ def build_context(
     session_manager: SessionManager,
     *,
     max_turns: int = _MAX_TURNS,
+    tools: list | None = None,
+    include_skills: bool = False,
 ) -> list:
     """构建完整的对话上下文消息列表。
 
@@ -109,8 +111,29 @@ def build_context(
         conversation_id: 会话 ID
         session_manager: 会话管理器实例
         max_turns: 保留的最大对话轮数（超出则截断最早的历史）
+        tools: 可用工具列表，非空时注入到 system prompt 末尾
+        include_skills: 是否将 skills 描述注入到 system prompt 末尾
     """
-    messages = [SystemMessage(content=get_system_prompt())]
+    system_content = get_system_prompt()
+
+    extra_parts = []
+
+    if tools:
+        from app.context.tool_loader import get_tool_descriptions
+        tool_desc = get_tool_descriptions(tools)
+        if tool_desc:
+            extra_parts.append(tool_desc)
+
+    if include_skills:
+        from app.context.tool_loader import get_skill_descriptions
+        skill_desc = get_skill_descriptions()
+        if skill_desc:
+            extra_parts.append(skill_desc)
+
+    if extra_parts:
+        system_content += "\n\n" + "\n\n".join(extra_parts)
+
+    messages = [SystemMessage(content=system_content)]
 
     history = session_manager.get_messages(conversation_id)
     if not history:

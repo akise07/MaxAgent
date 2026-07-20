@@ -227,9 +227,12 @@ def build_openai_tools() -> list[dict]:
     """构建 OpenAI Tool Calling 格式的 tools 列表。
 
     参数结构完全由 skill.md 决定，加载器仅做透传。
+    排除 bash 工具（由 app/tools/system.py 管理）。
     """
     tools = []
     for s in get_skills().values():
+        if s.name == "bash":
+            continue  # bash 由 system.py 的 @tool 装饰器管理
         tool = {
             "type": "function",
             "function": {
