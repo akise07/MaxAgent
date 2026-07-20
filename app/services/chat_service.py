@@ -289,18 +289,18 @@ async def run_chat_stream(
                 # 收集 tool_calls
                 if chunk.tool_call_chunks:
                     for tc_chunk in chunk.tool_call_chunks:
-                        idx = tc_chunk.get("index", 0)
+                        idx = tc_chunk.index if tc_chunk.index is not None else 0
                         # 确保列表够长
                         while len(collected_tool_calls) <= idx:
                             collected_tool_calls.append({"name": "", "args": "", "id": ""})
                             current_tool_index = idx
 
-                        if tc_chunk.get("name"):
-                            collected_tool_calls[idx]["name"] = tc_chunk["name"]
-                        if tc_chunk.get("args"):
-                            collected_tool_calls[idx]["args"] += tc_chunk["args"]
-                        if tc_chunk.get("id"):
-                            collected_tool_calls[idx]["id"] = tc_chunk["id"]
+                        if tc_chunk.name:
+                            collected_tool_calls[idx]["name"] = tc_chunk.name
+                        if tc_chunk.args:
+                            collected_tool_calls[idx]["args"] += tc_chunk.args
+                        if tc_chunk.id:
+                            collected_tool_calls[idx]["id"] = tc_chunk.id
 
         # 检查是否有 tool_calls
         has_tool_calls = any(
@@ -324,7 +324,7 @@ async def run_chat_stream(
 
             # 发送 tool_call 事件
             for tc in parsed_tool_calls:
-                yield f"data: {json.dumps({'type': 'tool_call', 'name': tc['name'], 'args': tc['args']})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_call', 'name': tc['name'], 'args': tc['args'], 'id': tc['id']})}\n\n"
 
             # 将 assistant 消息加入历史（含 tool_calls）
             assistant_msg = AIMessage(
@@ -339,7 +339,7 @@ async def run_chat_stream(
             # 逐个执行工具
             for tc in parsed_tool_calls:
                 result = _execute_tool(tc["name"], tc["args"])
-                yield f"data: {json.dumps({'type': 'tool_result', 'name': tc['name'], 'content': result})}\n\n"
+                yield f"data: {json.dumps({'type': 'tool_result', 'name': tc['name'], 'content': result, 'id': tc['id']})}\n\n"
                 messages.append(
                     ToolMessage(content=result, tool_call_id=tc["id"])
                 )

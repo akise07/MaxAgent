@@ -698,6 +698,77 @@
         }
     }
 
+    function createToolCallRow(toolName, args, callId) {
+        // 工具调用行：可折叠，默认合并状态
+        // bash 工具特殊处理，标题显示为"运行命令"
+        const isBash = toolName.toLowerCase() === 'bash';
+        const title = isBash ? t('tool.running_command') : `${t('tool.calling')}:${toolName}`;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'tool-row';
+        wrapper.dataset.callId = callId || '';
+        wrapper.dataset.expanded = 'false';
+
+        // 头部：图标 + 标题 + 箭头
+        const header = document.createElement('div');
+        header.className = 'tool-row-header';
+        header.innerHTML = `
+            <span class="tool-row-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+            </span>
+            <span class="tool-row-title">${escapeHtml(title)}</span>
+            <span class="tool-row-arrow">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </span>
+        `;
+
+        // 详情：参数 + 结果
+        const details = document.createElement('div');
+        details.className = 'tool-row-details';
+        details.hidden = true;
+        details.innerHTML = `
+            <div class="tool-row-section">
+                <div class="tool-row-label">${t('tool.arguments')}</div>
+                <pre class="tool-row-args">${escapeHtml(JSON.stringify(args, null, 2))}</pre>
+            </div>
+            <div class="tool-row-section tool-row-result-section" style="display:none;">
+                <div class="tool-row-label">${t('tool.result')}</div>
+                <pre class="tool-row-result"></pre>
+            </div>
+        `;
+
+        header.addEventListener('click', () => {
+            const expanded = wrapper.dataset.expanded === 'true';
+            wrapper.dataset.expanded = expanded ? 'false' : 'true';
+            details.hidden = expanded;
+        });
+
+        wrapper.appendChild(header);
+        wrapper.appendChild(details);
+
+        // 包裹在 message assistant 中以保持消息布局一致
+        const msg = document.createElement('div');
+        msg.className = 'message assistant tool-message';
+        msg.appendChild(wrapper);
+        return msg;
+    }
+
+    function updateToolResult(messagesEl, callId, content) {
+        const row = messagesEl.querySelector(`.tool-row[data-call-id="${callId}"]`);
+        if (!row) return;
+        const resultSection = row.querySelector('.tool-row-result-section');
+        const resultEl = row.querySelector('.tool-row-result');
+        if (resultSection && resultEl) {
+            resultSection.style.display = '';
+            resultEl.textContent = content;
+        }
+    }
+
     async function switchToConversation(id) {
         if (isLoading) return;
         isLoading = true;
@@ -744,14 +815,14 @@
             // onToolCall
             (event) => {
                 removeTyping();
-                const div = document.createElement('div');
-                div.className = 'message assistant';
-                div.innerHTML = `<div class="bubble tool-call">🔧 调用工具: ${event.name}(${JSON.stringify(event.args)})</div>`;
-                messagesEl.appendChild(div);
+                const row = createToolCallRow(event.name, event.args, event.id);
+                messagesEl.appendChild(row);
                 scrollToBottom();
             },
-            // onToolResult — 不显示
-            (event) => {},
+            // onToolResult
+            (event) => {
+                updateToolResult(messagesEl, event.id, event.content);
+            },
             // onDone
             (reply, error) => {
                 removeTyping();

@@ -26,6 +26,12 @@ const translations = {
       confirm_delete: '确定要删除任务「{title}」吗？',
     },
     skills: { select_hint: '技能库即将上线，敬请期待' },
+    tool: {
+      running_command: '运行命令',
+      calling: '调用工具',
+      arguments: '参数',
+      result: '结果',
+    },
     common: { loading: '加载中...', request_failed: '请求失败' },
     chat: {
       welcome_title: '有什么我可以帮您的？',
@@ -116,6 +122,12 @@ const translations = {
       confirm_delete: 'Delete task "{title}"?',
     },
     skills: { select_hint: 'Skills library coming soon' },
+    tool: {
+      running_command: 'Running command',
+      calling: 'Calling tool',
+      arguments: 'Arguments',
+      result: 'Result',
+    },
     common: { loading: 'Loading...', request_failed: 'Request failed' },
     chat: {
       welcome_title: 'What can I help you with?',

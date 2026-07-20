@@ -1809,3 +1809,90 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     border-color: var(--danger);
     color: var(--danger);
 }
+
+/* ===== Tool Call Row ===== */
+.tool-message {
+    margin: 6px 0;
+}
+
+.tool-row {
+    background: var(--menu-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 100%;
+}
+
+.tool-row-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-primary);
+    transition: background 0.15s;
+}
+
+.tool-row-header:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+}
+
+.tool-row-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+}
+
+.tool-row-title {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.tool-row-arrow {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.tool-row[data-expanded='true'] .tool-row-arrow {
+    transform: rotate(90deg);
+}
+
+.tool-row-details {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary, rgba(0, 0, 0, 0.05));
+}
+
+.tool-row-section {
+    margin-bottom: 8px;
+}
+
+.tool-row-section:last-child {
+    margin-bottom: 0;
+}
+
+.tool-row-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.tool-row-args,
+.tool-row-result {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--code-bg, rgba(0, 0, 0, 0.2));
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 240px;
+    overflow-y: auto;
+}
