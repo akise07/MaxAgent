@@ -85,8 +85,8 @@ Python 代码直接从 `os.environ` 读取，无需做任何额外操作。
 提示用户提供 API Key 和 Base URL，收到后用 `export` 写入当前 shell 环境：
 
 ```cmd
-set  GPT_IMAGE_API_KEY='<用户提供的 key>'
-set  GPT_IMAGE_BASE_URL='<用户提供的 base url>'
+setx  GPT_IMAGE_API_KEY "<用户提供的 key>" /M
+setx  GPT_IMAGE_BASE_URL "<用户提供的 base url>" /M
 ```
 
 之后所有 Python 代码统一从 `os.environ` 读取，**不再需要任何特殊处理**。
