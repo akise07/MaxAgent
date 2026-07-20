@@ -464,9 +464,10 @@
                     }
                     prevThinking.classList.remove('thinking-active');
                 }
-                // 重置 thinkingRow，让第二轮 thinking 创建新行
+                // 重置 thinkingRow 和 assistantBubble，让第二轮 thinking/token 创建新消息框
                 thinkingRow = null;
                 thinkingContentEl = null;
+                assistantBubble = null;
                 const row = createToolCallRow(event.name, event.args, event.id);
                 messagesEl.appendChild(row);
                 scrollToBottom();
@@ -492,6 +493,10 @@
                 } else if (!assistantBubble && reply) {
                     appendMessage('assistant', reply);
                 }
+                // 重置状态，为下一次消息做准备
+                assistantBubble = null;
+                thinkingRow = null;
+                thinkingContentEl = null;
                 if (onFinish) onFinish();
             },
         };
@@ -560,7 +565,7 @@
 
         messagesEl.innerHTML = '';
         messages.forEach((msg) => {
-            // assistant 消息含 thinking 内容（在 tool_calls 之前渲染）
+            // assistant 消息含 thinking 内容（独立消息框）
             if (msg.role === 'assistant' && msg.thinking) {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'thinking-row';
@@ -594,7 +599,7 @@
                 });
                 messagesEl.appendChild(wrapper);
             }
-            // 工具调用消息（assistant 含 tool_calls）— 合并结果
+            // 工具调用消息（assistant 含 tool_calls）— 每个 tool_call 独立消息框
             if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
                 msg.tool_calls.forEach((tc) => {
                     const row = createToolCallRow(tc.name, tc.args, tc.id);
@@ -608,14 +613,14 @@
                     }
                     messagesEl.appendChild(row);
                 });
-                return;
+                // 不 return，继续渲染 content
             }
             // 跳过已被合并到 assistant 消息中的 tool 消息
-            if (msg.role === 'tool' && msg.tool_call_id && mergedToolIds.has(msg.tool_call_id)) {
+            else if (msg.role === 'tool' && msg.tool_call_id && mergedToolIds.has(msg.tool_call_id)) {
                 return;
             }
             // 孤立的 tool 角色消息（无对应 tool_call）— 仍单独渲染
-            if (msg.role === 'tool') {
+            else if (msg.role === 'tool') {
                 const row = createToolCallRow('tool_result', {}, '');
                 const resultSection = row.querySelector('.tool-row-result-section');
                 const resultEl = row.querySelector('.tool-row-result');
@@ -626,10 +631,15 @@
                 messagesEl.appendChild(row);
                 return;
             }
-            // 普通消息
-            if (msg.role === 'assistant' || msg.role === 'user') {
+            // 普通消息（assistant 的 content 单独渲染）
+            if (msg.role === 'assistant' && msg.content) {
                 const div = document.createElement('div');
-                div.className = `message ${msg.role}`;
+                div.className = 'message assistant';
+                div.innerHTML = `<div class="bubble">${formatContent(msg.content)}</div>`;
+                messagesEl.appendChild(div);
+            } else if (msg.role === 'user') {
+                const div = document.createElement('div');
+                div.className = 'message user';
                 div.innerHTML = `<div class="bubble">${formatContent(msg.content)}</div>`;
                 messagesEl.appendChild(div);
             }
