@@ -8,6 +8,10 @@ Tool Calling 流程：
 2. 用 bind_tools 将技能注册为 OpenAI tools
 3. LLM 返回 response.tool_calls → 执行对应技能 → 结果追加到消息列表
 4. 将最终回复返回给用户
+
+流式输出（run_chat_stream）：
+- 第一轮流式输出：逐块 yield token，遇到 tool_calls 时 yield 特殊事件
+- 执行工具后，第二轮流式输出最终回复
 """
 from __future__ import annotations
 
@@ -15,8 +19,9 @@ import importlib.util
 import json
 import os
 import re
+from typing import AsyncGenerator
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from app.config.model import THINKING_LEVELS
@@ -213,3 +218,155 @@ def run_chat(
         error_msg = f"调用 Agent 时出错: {str(e)}"
         session_manager.add_message(req.conversation_id, "assistant", error_msg)
         return {"reply": error_msg}
+
+
+async def run_chat_stream(
+    req,
+    session_manager: SessionManager,
+    agent,
+    model_store: ModelConfigStore | None,
+    config: Config,
+) -> AsyncGenerator[str, None]:
+    """流式聊天：以 SSE 格式逐块输出 token。
+
+    事件类型：
+    - data: {"type": "token", "content": "..."}  — 普通 token
+    - data: {"type": "tool_call", "name": "...", "args": {...}}  — 工具调用
+    - data: {"type": "tool_result", "name": "...", "content": "..."}  — 工具执行结果
+    - data: {"type": "done", "content": "..."}  — 完整回复
+    - data: {"type": "error", "content": "..."}  — 错误信息
+    """
+    # 首次消息自动生成标题
+    existing = session_manager.get_messages(req.conversation_id)
+    if not existing:
+        title = req.message.strip()[:20] or "新对话"
+        session_manager.rename(req.conversation_id, title)
+
+    # 写入用户消息
+    session_manager.add_message(req.conversation_id, "user", req.message)
+
+    try:
+        # 构建完整对话上下文
+        messages = build_context(req.conversation_id, session_manager)
+
+        # 解析 LLM 配置
+        llm_cfg = resolve_llm_config(model_store, config, req.model_id)
+        advanced_cfg = dict(llm_cfg.get("advanced") or {})
+        if req.thinking_enabled is not None:
+            advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
+        if req.thinking_intensity:
+            advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
+        reasoning_effort, model_kwargs = build_thinking_kwargs(advanced_cfg)
+
+        llm_kwargs: dict = {
+            "model": llm_cfg["model"],
+            "api_key": llm_cfg["api_key"],
+            "base_url": llm_cfg["base_url"],
+        }
+        if reasoning_effort is not None:
+            llm_kwargs["reasoning_effort"] = reasoning_effort
+        if model_kwargs:
+            llm_kwargs["model_kwargs"] = model_kwargs
+
+        # 构建 LLM 实例并绑定工具
+        tools = build_openai_tools()
+        llm = ChatOpenAI(**llm_kwargs)
+        if tools:
+            llm = llm.bind_tools(tools)
+
+        # ---- 第一轮流式调用 ----
+        collected_content = ""
+        collected_tool_calls: list[dict] = []
+        current_tool_index = -1
+
+        async for chunk in llm.astream(messages):
+            if isinstance(chunk, AIMessageChunk):
+                # 收集文本 token
+                if chunk.content:
+                    collected_content += chunk.content
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+
+                # 收集 tool_calls
+                if chunk.tool_call_chunks:
+                    for tc_chunk in chunk.tool_call_chunks:
+                        idx = tc_chunk.get("index", 0)
+                        # 确保列表够长
+                        while len(collected_tool_calls) <= idx:
+                            collected_tool_calls.append({"name": "", "args": "", "id": ""})
+                            current_tool_index = idx
+
+                        if tc_chunk.get("name"):
+                            collected_tool_calls[idx]["name"] = tc_chunk["name"]
+                        if tc_chunk.get("args"):
+                            collected_tool_calls[idx]["args"] += tc_chunk["args"]
+                        if tc_chunk.get("id"):
+                            collected_tool_calls[idx]["id"] = tc_chunk["id"]
+
+        # 检查是否有 tool_calls
+        has_tool_calls = any(
+            tc.get("name") and tc.get("args")
+            for tc in collected_tool_calls
+        )
+
+        if has_tool_calls:
+            # 解析完整的 tool_calls
+            parsed_tool_calls = []
+            for tc in collected_tool_calls:
+                try:
+                    args = json.loads(tc["args"]) if tc["args"] else {}
+                except json.JSONDecodeError:
+                    args = {}
+                parsed_tool_calls.append({
+                    "name": tc["name"],
+                    "args": args,
+                    "id": tc["id"] or f"call_{tc['name']}",
+                })
+
+            # 发送 tool_call 事件
+            for tc in parsed_tool_calls:
+                yield f"data: {json.dumps({'type': 'tool_call', 'name': tc['name'], 'args': tc['args']})}\n\n"
+
+            # 将 assistant 消息加入历史（含 tool_calls）
+            assistant_msg = AIMessage(
+                content=collected_content or "",
+                tool_calls=[
+                    {"name": tc["name"], "args": tc["args"], "id": tc["id"]}
+                    for tc in parsed_tool_calls
+                ],
+            )
+            messages.append(assistant_msg)
+
+            # 逐个执行工具
+            for tc in parsed_tool_calls:
+                result = _execute_tool(tc["name"], tc["args"])
+                yield f"data: {json.dumps({'type': 'tool_result', 'name': tc['name'], 'content': result})}\n\n"
+                messages.append(
+                    ToolMessage(content=result, tool_call_id=tc["id"])
+                )
+
+            # ---- 第二轮流式调用 ----
+            collected_content = ""
+            async for chunk in llm.astream(messages):
+                if isinstance(chunk, AIMessageChunk) and chunk.content:
+                    collected_content += chunk.content
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+
+        # 最终回复
+        reply = collected_content
+        if not reply and agent is not None:
+            result = agent.invoke({"messages": messages})
+            for msg in result["messages"]:
+                if hasattr(msg, "content") and msg.content:
+                    reply = msg.content
+
+        if not reply:
+            reply = "抱歉，我没有生成有效的回复。"
+
+        # 写入助手回复
+        session_manager.add_message(req.conversation_id, "assistant", reply)
+        yield f"data: {json.dumps({'type': 'done', 'content': reply})}\n\n"
+
+    except Exception as e:
+        error_msg = f"调用 Agent 时出错: {str(e)}"
+        session_manager.add_message(req.conversation_id, "assistant", error_msg)
+        yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"

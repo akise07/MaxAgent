@@ -290,6 +290,71 @@
         }
     }
 
+    async function sendMessageStream(conversationId, message, modelId, onToken, onToolCall, onToolResult, onDone) {
+        try {
+            setStatus('busy', t('chat.thinking'));
+            const response = await fetch('/api/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    conversation_id: conversationId,
+                    message,
+                    model_id: modelId || selectedModelId || null,
+                }),
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({ detail: response.statusText }));
+                onDone('', `${t('common.request_failed')}: ${err.detail}`);
+                return;
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let fullReply = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const dataStr = line.slice(6).trim();
+                    if (!dataStr) continue;
+                    try {
+                        const event = JSON.parse(dataStr);
+                        switch (event.type) {
+                            case 'token':
+                                fullReply += event.content;
+                                onToken(event.content);
+                                break;
+                            case 'tool_call':
+                                onToolCall(event);
+                                break;
+                            case 'tool_result':
+                                onToolResult(event);
+                                break;
+                            case 'done':
+                                fullReply = event.content;
+                                onDone(event.content, null);
+                                return;
+                            case 'error':
+                                onDone('', event.content);
+                                return;
+                        }
+                    } catch (e) {
+                        // skip malformed JSON
+                    }
+                }
+            }
+            onDone(fullReply, null);
+        } catch (e) {
+            onDone('', `${t('common.request_failed')}: ${e.message}`);
+        } finally {
+            setStatus('idle', t('status.ready'));
+        }
+    }
+
     function renderConversationList(filter = '') {
         if (!conversationList) return;
         const filtered = filter
@@ -570,9 +635,55 @@
             messagesEl.innerHTML = '';
             appendMessage('user', message);
             showTyping();
-            const reply = await sendMessage(id, message, selectedModelId);
-            removeTyping();
-            appendMessage('assistant', reply);
+
+            // 流式输出
+            let assistantBubble = null;
+            await new Promise((resolve) => {
+                sendMessageStream(
+                    id, message, selectedModelId,
+                    // onToken
+                    (token) => {
+                        if (!assistantBubble) {
+                            removeTyping();
+                            const div = document.createElement('div');
+                            div.className = 'message assistant';
+                            div.innerHTML = '<div class="bubble"></div>';
+                            messagesEl.appendChild(div);
+                            assistantBubble = div.querySelector('.bubble');
+                            scrollToBottom();
+                        }
+                        assistantBubble.innerHTML = formatContent(assistantBubble.textContent + token);
+                        scrollToBottom();
+                    },
+                    // onToolCall
+                    (event) => {
+                        removeTyping();
+                        const div = document.createElement('div');
+                        div.className = 'message assistant';
+                        div.innerHTML = `<div class="bubble tool-call">🔧 调用工具: ${event.name}(${JSON.stringify(event.args)})</div>`;
+                        messagesEl.appendChild(div);
+                        scrollToBottom();
+                    },
+                    // onToolResult
+                    (event) => {
+                        const div = document.createElement('div');
+                        div.className = 'message assistant';
+                        div.innerHTML = `<div class="bubble tool-result">✅ ${event.name} 执行完成</div>`;
+                        messagesEl.appendChild(div);
+                        scrollToBottom();
+                    },
+                    // onDone
+                    (reply, error) => {
+                        removeTyping();
+                        if (error) {
+                            appendMessage('assistant', error);
+                        } else if (!assistantBubble && reply) {
+                            appendMessage('assistant', reply);
+                        }
+                        resolve();
+                    }
+                );
+            });
             await loadConversations();
             const conv = conversations.find((c) => c.id === id);
             if (conv && chatTitle) chatTitle.textContent = conv.title;
@@ -609,13 +720,52 @@
         messageInput.style.height = 'auto';
         appendMessage('user', text);
         showTyping();
-        const reply = await sendMessage(currentConversationId, text, selectedModelId);
-        removeTyping();
-        appendMessage('assistant', reply);
-        await loadConversations();
-        const conv = conversations.find((c) => c.id === currentConversationId);
-        if (conv) chatTitle.textContent = conv.title;
-        renderConversationList(searchInput ? searchInput.value : '');
+
+        // 流式输出
+        let assistantBubble = null;
+        sendMessageStream(
+            currentConversationId,
+            text,
+            selectedModelId,
+            // onToken: 追加文本到气泡
+            (token) => {
+                if (!assistantBubble) {
+                    removeTyping();
+                    const div = document.createElement('div');
+                    div.className = 'message assistant';
+                    div.innerHTML = '<div class="bubble"></div>';
+                    messagesEl.appendChild(div);
+                    assistantBubble = div.querySelector('.bubble');
+                    scrollToBottom();
+                }
+                assistantBubble.innerHTML = formatContent(assistantBubble.textContent + token);
+                scrollToBottom();
+            },
+            // onToolCall
+            (event) => {
+                removeTyping();
+                const div = document.createElement('div');
+                div.className = 'message assistant';
+                div.innerHTML = `<div class="bubble tool-call">🔧 调用工具: ${event.name}(${JSON.stringify(event.args)})</div>`;
+                messagesEl.appendChild(div);
+                scrollToBottom();
+            },
+            // onToolResult — 不显示
+            (event) => {},
+            // onDone
+            (reply, error) => {
+                removeTyping();
+                if (error) {
+                    appendMessage('assistant', error);
+                } else if (!assistantBubble && reply) {
+                    appendMessage('assistant', reply);
+                }
+                loadConversations();
+                const conv = conversations.find((c) => c.id === currentConversationId);
+                if (conv) chatTitle.textContent = conv.title;
+                renderConversationList(searchInput ? searchInput.value : '');
+            }
+        );
     }
 
     // ===== Dropdowns =====

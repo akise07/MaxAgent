@@ -155,7 +155,8 @@ app.py / main.py
 
 | 方法 | 路径 | 路由文件 | 说明 |
 |------|------|---------|------|
-| POST | `/api/chat` | `chat.py` | 聊天主接口 |
+| POST | `/api/chat` | `chat.py` | 聊天主接口（非流式） |
+| POST | `/api/chat/stream` | `chat.py` | 聊天流式接口（SSE） |
 | GET | `/api/config` | `chat.py` | 前端配置信息 |
 | POST | `/api/open-home` | `chat.py` | 打开 home 目录 |
 | GET | `/api/conversations` | `conversations.py` | 会话列表 |

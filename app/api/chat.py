@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.config.settings import Config
 from app.schemas.requests import ChatRequest
@@ -114,4 +115,32 @@ async def chat(req: ChatRequest):
         agent=_agent,
         model_store=_model_store,
         config=_config,
+    )
+
+
+@router.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """流式聊天：以 SSE 格式逐块输出 token。"""
+    if _session_manager is None or _agent is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+    if _config is None:
+        raise HTTPException(status_code=500, detail="配置未初始化")
+
+    if not _session_manager.exists(req.conversation_id):
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    return StreamingResponse(
+        chat_service.run_chat_stream(
+            req,
+            session_manager=_session_manager,
+            agent=_agent,
+            model_store=_model_store,
+            config=_config,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
