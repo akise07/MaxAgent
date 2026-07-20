@@ -134,14 +134,32 @@ class SessionManager:
     def exists(self, conversation_id: str) -> bool:
         return conversation_id in self._conversations
 
-    def add_message(self, conversation_id: str, role: str, content: str) -> bool:
-        """向会话追加消息并持久化。"""
+    def add_message(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        *,
+        tool_calls: list[dict] | None = None,
+        tool_call_id: str | None = None,
+    ) -> bool:
+        """向会话追加消息并持久化。
+
+        参数：
+            role: "user" / "assistant" / "tool"
+            content: 消息内容
+            tool_calls: assistant 消息的工具调用列表（可选）
+            tool_call_id: tool 消息对应的工具调用 ID（可选）
+        """
         with self._lock:
             if conversation_id not in self._conversations:
                 return False
-            self._conversations[conversation_id].append(
-                {"role": role, "content": content}
-            )
+            msg: dict[str, Any] = {"role": role, "content": content}
+            if tool_calls:
+                msg["tool_calls"] = tool_calls
+            if tool_call_id:
+                msg["tool_call_id"] = tool_call_id
+            self._conversations[conversation_id].append(msg)
             self._save(conversation_id)
             # 更新顺序（最近活跃的排在最前）
             if conversation_id in self._order:

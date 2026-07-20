@@ -90,6 +90,45 @@ def _read_skill_md(skill_name: str) -> str:
     return re.sub(r"^---.*?---\s*", "", content, count=1, flags=re.DOTALL).strip()
 
 
+def _build_llm(
+    req,
+    model_store: ModelConfigStore | None,
+    config: Config,
+) -> ChatOpenAI:
+    """根据请求和配置构建 LLM 实例（含工具绑定）。"""
+    llm_cfg = resolve_llm_config(model_store, config, req.model_id)
+    advanced_cfg = dict(llm_cfg.get("advanced") or {})
+    if req.thinking_enabled is not None:
+        advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
+    if req.thinking_intensity:
+        advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
+    reasoning_effort, model_kwargs = build_thinking_kwargs(advanced_cfg)
+
+    llm_kwargs: dict = {
+        "model": llm_cfg["model"],
+        "api_key": llm_cfg["api_key"],
+        "base_url": llm_cfg["base_url"],
+    }
+    if reasoning_effort is not None:
+        llm_kwargs["reasoning_effort"] = reasoning_effort
+    if model_kwargs:
+        llm_kwargs["model_kwargs"] = model_kwargs
+
+    tools = build_openai_tools()
+    llm = ChatOpenAI(**llm_kwargs)
+    if tools:
+        llm = llm.bind_tools(tools)
+    return llm
+
+
+def _ensure_title(req, session_manager: SessionManager) -> None:
+    """首次消息自动生成标题。"""
+    existing = session_manager.get_messages(req.conversation_id)
+    if not existing:
+        title = req.message.strip()[:20] or "新对话"
+        session_manager.rename(req.conversation_id, title)
+
+
 def _execute_tool(tool_name: str, arguments: dict) -> str:
     """执行工具调用，返回结果文本。
 
@@ -140,67 +179,27 @@ def run_chat(
 
     调用方需保证会话已存在（路由层校验）。返回 {"reply": ...}。
     """
-    # 如果是首次用户消息，自动生成标题
-    existing = session_manager.get_messages(req.conversation_id)
-    if not existing:
-        title = req.message.strip()[:20] or "新对话"
-        session_manager.rename(req.conversation_id, title)
-
-    # 写入用户消息
+    _ensure_title(req, session_manager)
     session_manager.add_message(req.conversation_id, "user", req.message)
 
     try:
-        # 构建完整对话上下文（含历史消息）
         messages = build_context(req.conversation_id, session_manager)
-
-        # 解析 LLM 配置
-        llm_cfg = resolve_llm_config(model_store, config, req.model_id)
-        advanced_cfg = dict(llm_cfg.get("advanced") or {})
-        if req.thinking_enabled is not None:
-            advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
-        if req.thinking_intensity:
-            advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
-        reasoning_effort, model_kwargs = build_thinking_kwargs(advanced_cfg)
-
-        llm_kwargs: dict = {
-            "model": llm_cfg["model"],
-            "api_key": llm_cfg["api_key"],
-            "base_url": llm_cfg["base_url"],
-        }
-        if reasoning_effort is not None:
-            llm_kwargs["reasoning_effort"] = reasoning_effort
-        if model_kwargs:
-            llm_kwargs["model_kwargs"] = model_kwargs
-
-        # 构建 LLM 实例并绑定工具
-        tools = build_openai_tools()
-        llm = ChatOpenAI(**llm_kwargs)
-        if tools:
-            llm = llm.bind_tools(tools)
+        llm = _build_llm(req, model_store, config)
 
         # 第一轮调用：LLM 可能返回 tool_calls
         response = llm.invoke(messages)
 
         # 处理 tool_calls
         if hasattr(response, "tool_calls") and response.tool_calls:
-            # 将 assistant 的 tool_calls 消息加入历史
             messages.append(response)
-
-            # 逐个执行工具
             for tc in response.tool_calls:
-                tool_name = tc.get("name", "")
-                tool_args = tc.get("args", {})
-                tool_call_id = tc.get("id", "")
-
-                result = _execute_tool(tool_name, tool_args)
+                result = _execute_tool(tc.get("name", ""), tc.get("args", {}))
                 messages.append(
-                    ToolMessage(content=result, tool_call_id=tool_call_id)
+                    ToolMessage(content=result, tool_call_id=tc.get("id", ""))
                 )
-
-            # 第二轮调用：将工具结果送回 LLM 生成最终回复
+            # 第二轮调用
             response = llm.invoke(messages)
 
-        # 提取回复内容
         reply = getattr(response, "content", None) or ""
         if not reply and agent is not None:
             result = agent.invoke({"messages": messages})
@@ -208,11 +207,7 @@ def run_chat(
                 if hasattr(msg, "content") and msg.content:
                     reply = msg.content
 
-        if not reply:
-            reply = "抱歉，我没有生成有效的回复。"
-
-        # 写入助手回复
-        session_manager.add_message(req.conversation_id, "assistant", reply)
+        session_manager.add_message(req.conversation_id, "assistant", reply or "抱歉，我没有生成有效的回复。")
         return {"reply": reply}
     except Exception as e:
         error_msg = f"调用 Agent 时出错: {str(e)}"
@@ -236,76 +231,47 @@ async def run_chat_stream(
     - data: {"type": "done", "content": "..."}  — 完整回复
     - data: {"type": "error", "content": "..."}  — 错误信息
     """
-    # 首次消息自动生成标题
-    existing = session_manager.get_messages(req.conversation_id)
-    if not existing:
-        title = req.message.strip()[:20] or "新对话"
-        session_manager.rename(req.conversation_id, title)
-
-    # 写入用户消息
+    _ensure_title(req, session_manager)
     session_manager.add_message(req.conversation_id, "user", req.message)
 
     try:
-        # 构建完整对话上下文
         messages = build_context(req.conversation_id, session_manager)
-
-        # 解析 LLM 配置
-        llm_cfg = resolve_llm_config(model_store, config, req.model_id)
-        advanced_cfg = dict(llm_cfg.get("advanced") or {})
-        if req.thinking_enabled is not None:
-            advanced_cfg["thinking_mode"] = bool(req.thinking_enabled)
-        if req.thinking_intensity:
-            advanced_cfg["default_thinking_intensity"] = req.thinking_intensity
-        reasoning_effort, model_kwargs = build_thinking_kwargs(advanced_cfg)
-
-        llm_kwargs: dict = {
-            "model": llm_cfg["model"],
-            "api_key": llm_cfg["api_key"],
-            "base_url": llm_cfg["base_url"],
-        }
-        if reasoning_effort is not None:
-            llm_kwargs["reasoning_effort"] = reasoning_effort
-        if model_kwargs:
-            llm_kwargs["model_kwargs"] = model_kwargs
-
-        # 构建 LLM 实例并绑定工具
-        tools = build_openai_tools()
-        llm = ChatOpenAI(**llm_kwargs)
-        if tools:
-            llm = llm.bind_tools(tools)
+        llm = _build_llm(req, model_store, config)
 
         # ---- 第一轮流式调用 ----
         collected_content = ""
         collected_tool_calls: list[dict] = []
-        current_tool_index = -1
 
         async for chunk in llm.astream(messages):
-            if isinstance(chunk, AIMessageChunk):
-                # 收集文本 token
-                if chunk.content:
-                    collected_content += chunk.content
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+            if not isinstance(chunk, AIMessageChunk):
+                continue
+            if chunk.content:
+                collected_content += chunk.content
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
 
-                # 收集 tool_calls
-                if chunk.tool_call_chunks:
-                    for tc_chunk in chunk.tool_call_chunks:
+            if chunk.tool_call_chunks:
+                for tc_chunk in chunk.tool_call_chunks:
+                    if isinstance(tc_chunk, dict):
+                        idx = tc_chunk.get('index', 0)
+                        name_val = tc_chunk.get('name', '') or ''
+                        args_val = tc_chunk.get('args', '') or ''
+                        id_val = tc_chunk.get('id', '') or ''
+                    else:
                         idx = tc_chunk.index if tc_chunk.index is not None else 0
-                        # 确保列表够长
-                        while len(collected_tool_calls) <= idx:
-                            collected_tool_calls.append({"name": "", "args": "", "id": ""})
-                            current_tool_index = idx
+                        name_val = tc_chunk.name or ''
+                        args_val = tc_chunk.args or ''
+                        id_val = tc_chunk.id or ''
+                    while len(collected_tool_calls) <= idx:
+                        collected_tool_calls.append({"name": "", "args": "", "id": ""})
+                    if name_val:
+                        collected_tool_calls[idx]["name"] = name_val
+                    if args_val:
+                        collected_tool_calls[idx]["args"] += args_val
+                    if id_val:
+                        collected_tool_calls[idx]["id"] = id_val
 
-                        if tc_chunk.name:
-                            collected_tool_calls[idx]["name"] = tc_chunk.name
-                        if tc_chunk.args:
-                            collected_tool_calls[idx]["args"] += tc_chunk.args
-                        if tc_chunk.id:
-                            collected_tool_calls[idx]["id"] = tc_chunk.id
-
-        # 检查是否有 tool_calls
         has_tool_calls = any(
-            tc.get("name") and tc.get("args")
-            for tc in collected_tool_calls
+            tc.get("name") and tc.get("args") for tc in collected_tool_calls
         )
 
         if has_tool_calls:
@@ -322,17 +288,18 @@ async def run_chat_stream(
                     "id": tc["id"] or f"call_{tc['name']}",
                 })
 
-            # 发送 tool_call 事件
+            # 发送 tool_call 事件 + 写入会话存储
             for tc in parsed_tool_calls:
                 yield f"data: {json.dumps({'type': 'tool_call', 'name': tc['name'], 'args': tc['args'], 'id': tc['id']})}\n\n"
+            session_manager.add_message(
+                req.conversation_id, "assistant", collected_content or "",
+                tool_calls=[{"name": tc["name"], "args": tc["args"], "id": tc["id"]} for tc in parsed_tool_calls],
+            )
 
-            # 将 assistant 消息加入历史（含 tool_calls）
+            # 加入内存消息列表（用于第二轮调用）
             assistant_msg = AIMessage(
                 content=collected_content or "",
-                tool_calls=[
-                    {"name": tc["name"], "args": tc["args"], "id": tc["id"]}
-                    for tc in parsed_tool_calls
-                ],
+                tool_calls=[{"name": tc["name"], "args": tc["args"], "id": tc["id"]} for tc in parsed_tool_calls],
             )
             messages.append(assistant_msg)
 
@@ -340,9 +307,8 @@ async def run_chat_stream(
             for tc in parsed_tool_calls:
                 result = _execute_tool(tc["name"], tc["args"])
                 yield f"data: {json.dumps({'type': 'tool_result', 'name': tc['name'], 'content': result, 'id': tc['id']})}\n\n"
-                messages.append(
-                    ToolMessage(content=result, tool_call_id=tc["id"])
-                )
+                session_manager.add_message(req.conversation_id, "tool", result, tool_call_id=tc["id"])
+                messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
 
             # ---- 第二轮流式调用 ----
             collected_content = ""
@@ -359,11 +325,7 @@ async def run_chat_stream(
                 if hasattr(msg, "content") and msg.content:
                     reply = msg.content
 
-        if not reply:
-            reply = "抱歉，我没有生成有效的回复。"
-
-        # 写入助手回复
-        session_manager.add_message(req.conversation_id, "assistant", reply)
+        session_manager.add_message(req.conversation_id, "assistant", reply or "抱歉，我没有生成有效的回复。")
         yield f"data: {json.dumps({'type': 'done', 'content': reply})}\n\n"
 
     except Exception as e:

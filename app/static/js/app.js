@@ -271,26 +271,8 @@
         }
     }
 
-    async function sendMessage(conversationId, message, modelId) {
-        try {
-            setStatus('busy', t('chat.thinking'));
-            const data = await api('/api/chat', {
-                method: 'POST',
-                body: JSON.stringify({
-                    conversation_id: conversationId,
-                    message,
-                    model_id: modelId || selectedModelId || null,
-                }),
-            });
-            return data.reply;
-        } catch (e) {
-            return `${t('common.request_failed')}: ${e.message}`;
-        } finally {
-            setStatus('idle', t('status.ready'));
-        }
-    }
-
-    async function sendMessageStream(conversationId, message, modelId, onToken, onToolCall, onToolResult, onDone) {
+    async function sendMessageStream(conversationId, message, modelId, callbacks) {
+        const { onToken, onToolCall, onToolResult, onDone } = callbacks;
         try {
             setStatus('busy', t('chat.thinking'));
             const response = await fetch('/api/chat/stream', {
@@ -335,16 +317,13 @@
                                 onToolResult(event);
                                 break;
                             case 'done':
-                                fullReply = event.content;
                                 onDone(event.content, null);
                                 return;
                             case 'error':
                                 onDone('', event.content);
                                 return;
                         }
-                    } catch (e) {
-                        // skip malformed JSON
-                    }
+                    } catch (e) { /* skip malformed JSON */ }
                 }
             }
             onDone(fullReply, null);
@@ -353,6 +332,44 @@
         } finally {
             setStatus('idle', t('status.ready'));
         }
+    }
+
+    function makeStreamCallbacks(messagesEl, onFinish) {
+        // 创建公共的流式回调，用于 handleSend 和 submitNewTask
+        let assistantBubble = null;
+        return {
+            onToken: (token) => {
+                if (!assistantBubble) {
+                    removeTyping();
+                    const div = document.createElement('div');
+                    div.className = 'message assistant';
+                    div.innerHTML = '<div class="bubble"></div>';
+                    messagesEl.appendChild(div);
+                    assistantBubble = div.querySelector('.bubble');
+                    scrollToBottom();
+                }
+                assistantBubble.innerHTML = formatContent(assistantBubble.textContent + token);
+                scrollToBottom();
+            },
+            onToolCall: (event) => {
+                removeTyping();
+                const row = createToolCallRow(event.name, event.args, event.id);
+                messagesEl.appendChild(row);
+                scrollToBottom();
+            },
+            onToolResult: (event) => {
+                updateToolResult(messagesEl, event.id, event.content);
+            },
+            onDone: (reply, error) => {
+                removeTyping();
+                if (error) {
+                    appendMessage('assistant', error);
+                } else if (!assistantBubble && reply) {
+                    appendMessage('assistant', reply);
+                }
+                if (onFinish) onFinish();
+            },
+        };
     }
 
     function renderConversationList(filter = '') {
@@ -407,12 +424,55 @@
             messagesEl.innerHTML = `<div class="empty-state">${t('chat.start_chat')}</div>`;
             return;
         }
-        // <div class="avatar">${msg.role === 'user' ? 'U' : 'A'}</div>
-        messagesEl.innerHTML = messages.map((msg) => `
-            <div class="message ${msg.role}">
-                <div class="bubble">${formatContent(msg.content)}</div>
-            </div>
-        `).join('');
+        // 建立 tool_call_id → tool 结果映射，并标记已合并的 tool 消息
+        const toolResultsById = {};
+        const mergedToolIds = new Set();
+        messages.forEach((msg) => {
+            if (msg.role === 'tool' && msg.tool_call_id) {
+                toolResultsById[msg.tool_call_id] = msg.content;
+            }
+        });
+
+        messagesEl.innerHTML = '';
+        messages.forEach((msg) => {
+            // 工具调用消息（assistant 含 tool_calls）— 合并结果
+            if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+                msg.tool_calls.forEach((tc) => {
+                    const row = createToolCallRow(tc.name, tc.args, tc.id);
+                    const result = toolResultsById[tc.id];
+                    if (result !== undefined) {
+                        const resultSection = row.querySelector('.tool-row-result-section');
+                        const resultEl = row.querySelector('.tool-row-result');
+                        if (resultSection) resultSection.style.display = '';
+                        if (resultEl) resultEl.textContent = result;
+                        mergedToolIds.add(tc.id);
+                    }
+                    messagesEl.appendChild(row);
+                });
+                return;
+            }
+            // 跳过已被合并到 assistant 消息中的 tool 消息
+            if (msg.role === 'tool' && msg.tool_call_id && mergedToolIds.has(msg.tool_call_id)) {
+                return;
+            }
+            // 孤立的 tool 角色消息（无对应 tool_call）— 仍单独渲染
+            if (msg.role === 'tool') {
+                const row = createToolCallRow('tool_result', {}, '');
+                const resultSection = row.querySelector('.tool-row-result-section');
+                const resultEl = row.querySelector('.tool-row-result');
+                if (resultSection) resultSection.style.display = '';
+                if (resultEl) resultEl.textContent = msg.content;
+                const titleEl = row.querySelector('.tool-row-title');
+                if (titleEl) titleEl.textContent = t('tool.result');
+                messagesEl.appendChild(row);
+                return;
+            }
+            // 普通消息
+            const div = document.createElement('div');
+            div.className = `message ${msg.role}`;
+            div.innerHTML = `<div class="bubble">${formatContent(msg.content)}</div>`;
+            messagesEl.appendChild(div);
+        });
         scrollToBottom();
     }
 
@@ -637,51 +697,9 @@
             showTyping();
 
             // 流式输出
-            let assistantBubble = null;
             await new Promise((resolve) => {
-                sendMessageStream(
-                    id, message, selectedModelId,
-                    // onToken
-                    (token) => {
-                        if (!assistantBubble) {
-                            removeTyping();
-                            const div = document.createElement('div');
-                            div.className = 'message assistant';
-                            div.innerHTML = '<div class="bubble"></div>';
-                            messagesEl.appendChild(div);
-                            assistantBubble = div.querySelector('.bubble');
-                            scrollToBottom();
-                        }
-                        assistantBubble.innerHTML = formatContent(assistantBubble.textContent + token);
-                        scrollToBottom();
-                    },
-                    // onToolCall
-                    (event) => {
-                        removeTyping();
-                        const div = document.createElement('div');
-                        div.className = 'message assistant';
-                        div.innerHTML = `<div class="bubble tool-call">🔧 调用工具: ${event.name}(${JSON.stringify(event.args)})</div>`;
-                        messagesEl.appendChild(div);
-                        scrollToBottom();
-                    },
-                    // onToolResult
-                    (event) => {
-                        const div = document.createElement('div');
-                        div.className = 'message assistant';
-                        div.innerHTML = `<div class="bubble tool-result">✅ ${event.name} 执行完成</div>`;
-                        messagesEl.appendChild(div);
-                        scrollToBottom();
-                    },
-                    // onDone
-                    (reply, error) => {
-                        removeTyping();
-                        if (error) {
-                            appendMessage('assistant', error);
-                        } else if (!assistantBubble && reply) {
-                            appendMessage('assistant', reply);
-                        }
-                        resolve();
-                    }
+                sendMessageStream(id, message, selectedModelId,
+                    makeStreamCallbacks(messagesEl, () => resolve())
                 );
             });
             await loadConversations();
@@ -792,50 +810,13 @@
         appendMessage('user', text);
         showTyping();
 
-        // 流式输出
-        let assistantBubble = null;
-        sendMessageStream(
-            currentConversationId,
-            text,
-            selectedModelId,
-            // onToken: 追加文本到气泡
-            (token) => {
-                if (!assistantBubble) {
-                    removeTyping();
-                    const div = document.createElement('div');
-                    div.className = 'message assistant';
-                    div.innerHTML = '<div class="bubble"></div>';
-                    messagesEl.appendChild(div);
-                    assistantBubble = div.querySelector('.bubble');
-                    scrollToBottom();
-                }
-                assistantBubble.innerHTML = formatContent(assistantBubble.textContent + token);
-                scrollToBottom();
-            },
-            // onToolCall
-            (event) => {
-                removeTyping();
-                const row = createToolCallRow(event.name, event.args, event.id);
-                messagesEl.appendChild(row);
-                scrollToBottom();
-            },
-            // onToolResult
-            (event) => {
-                updateToolResult(messagesEl, event.id, event.content);
-            },
-            // onDone
-            (reply, error) => {
-                removeTyping();
-                if (error) {
-                    appendMessage('assistant', error);
-                } else if (!assistantBubble && reply) {
-                    appendMessage('assistant', reply);
-                }
+        sendMessageStream(currentConversationId, text, selectedModelId,
+            makeStreamCallbacks(messagesEl, () => {
                 loadConversations();
                 const conv = conversations.find((c) => c.id === currentConversationId);
                 if (conv) chatTitle.textContent = conv.title;
                 renderConversationList(searchInput ? searchInput.value : '');
-            }
+            })
         );
     }
 
