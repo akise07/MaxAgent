@@ -1,7 +1,4 @@
 """LangGraph Agent 构造：状态定义、LLM 工厂、节点函数与图装配。
-
-从根 main.py 抽离的业务逻辑，CLI 入口（main.py）与 GUI 入口（app.py）
-共享此处构造的 build_agent()。
 """
 from typing import Annotated, TypedDict
 

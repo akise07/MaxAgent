@@ -166,7 +166,7 @@
         return (m && m.advanced && m.advanced.context_size) || 0;
     }
 
-    function updateContextIndicator() {
+    async function updateContextIndicator() {
         const arc = $('context-progress-arc');
         const tooltip = $('context-tooltip-text');
         if (!arc || !tooltip) return;
@@ -175,23 +175,27 @@
             tooltip.textContent = '0% 0K/0K ' + t('chat.context_used');
             return;
         }
-        const conv = conversations.find((c) => c.id === currentConversationId);
-        const msgs = conv ? conv.message_count || 0 : 0;
-        const contextSize = getModelContextSize();
-        if (!contextSize) {
+        try {
+            const data = await api('/api/chat/context-usage?conversation_id=' + encodeURIComponent(currentConversationId) + '&model_id=' + encodeURIComponent(selectedModelId || ''));
+            const usedTokens = data.used_tokens || 0;
+            const contextSize = data.context_size || 0;
+            if (!contextSize) {
+                arc.setAttribute('stroke-dashoffset', '94.2');
+                tooltip.textContent = '-- ' + t('chat.context_na');
+                return;
+            }
+            const pct = Math.min(100, Math.round((usedTokens / contextSize) * 100));
+            const circumference = 94.2;
+            const offset = circumference - (pct / 100) * circumference;
+            arc.setAttribute('stroke-dashoffset', String(offset));
+            const usedK = Math.round(usedTokens / 1000);
+            const totalK = Math.round(contextSize / 1000);
+            tooltip.textContent = pct + '% ' + usedK + 'K/' + totalK + 'K ' + t('chat.context_used');
+        } catch (e) {
+            console.error('获取上下文使用量失败:', e);
             arc.setAttribute('stroke-dashoffset', '94.2');
             tooltip.textContent = '-- ' + t('chat.context_na');
-            return;
         }
-        // 粗略估算：每条消息平均 ~500 tokens
-        const estimatedTokens = Math.max(msgs * 500, 1);
-        const pct = Math.min(100, Math.round((estimatedTokens / contextSize) * 100));
-        const circumference = 94.2;
-        const offset = circumference - (pct / 100) * circumference;
-        arc.setAttribute('stroke-dashoffset', String(offset));
-        const usedK = Math.round(estimatedTokens / 1000);
-        const totalK = Math.round(contextSize / 1000);
-        tooltip.textContent = pct + '% ' + usedK + 'K/' + totalK + 'K ' + t('chat.context_used');
     }
 
     function updateModelPickerLabel() {
@@ -259,7 +263,7 @@
             const data = await api('/api/conversations');
             conversations = data.conversations || [];
             renderConversationList(searchInput ? searchInput.value : '');
-            updateContextIndicator();
+            await updateContextIndicator();
         } catch (e) {
             console.error('加载会话列表失败:', e);
         }
@@ -942,7 +946,7 @@
         renderMessages(messages);
         isLoading = false;
         sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
-        updateContextIndicator();
+        await updateContextIndicator();
     }
 
     async function handleSend() {

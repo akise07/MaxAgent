@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.config.settings import Config
+from app.context.context import count_context_tokens
 from app.schemas.requests import ChatRequest
 from app.services import chat_service
 from app.storage.models import ModelConfigStore
@@ -116,6 +117,49 @@ async def chat(req: ChatRequest):
         model_store=_model_store,
         config=_config,
     )
+
+
+@router.get("/api/chat/context-usage")
+async def get_context_usage(conversation_id: str, model_id: str | None = None):
+    """获取会话的上下文 token 使用量。
+
+    查询参数：
+        conversation_id: 会话 ID
+        model_id: 模型 ID（用于选择 tiktoken 编码，可选）
+
+    返回：
+        {"used_tokens": int, "context_size": int}
+    """
+    if _session_manager is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+    if not _session_manager.exists(conversation_id):
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    # 获取模型 context_size
+    context_size = 0
+    if _model_store is not None and model_id:
+        model = _model_store.get_model(model_id, include_key=False)
+        if model:
+            advanced = model.get("advanced") or {}
+            context_size = int(advanced.get("context_size") or 0)
+
+    # 获取模型名用于 tiktoken 编码选择
+    model_name = ""
+    if _model_store is not None and model_id:
+        model = _model_store.get_model(model_id, include_key=False)
+        if model:
+            model_name = model.get("model_id") or model.get("name") or ""
+
+    used_tokens = count_context_tokens(
+        conversation_id,
+        _session_manager,
+        model=model_name,
+    )
+
+    return {
+        "used_tokens": used_tokens,
+        "context_size": context_size,
+    }
 
 
 @router.post("/api/chat/stream")
