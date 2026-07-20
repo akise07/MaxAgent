@@ -315,13 +315,20 @@
         }
     }
 
+    // 全局 AbortController，用于中断流式请求
+    let _streamAbortController = null;
+
     async function sendMessageStream(conversationId, message, modelId, callbacks) {
         const { onToken, onThinking, onToolCall, onToolResult, onDone } = callbacks;
+        // 创建 AbortController
+        _streamAbortController = new AbortController();
+        const signal = _streamAbortController.signal;
         try {
             setStatus('busy', t('chat.thinking'));
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal,
                 body: JSON.stringify({
                     conversation_id: conversationId,
                     message,
@@ -375,8 +382,13 @@
             }
             onDone(fullReply, null);
         } catch (e) {
-            onDone('', `${t('common.request_failed')}: ${e.message}`);
+            if (e.name === 'AbortError') {
+                onDone('', null);  // 用户主动停止，不报错
+            } else {
+                onDone('', `${t('common.request_failed')}: ${e.message}`);
+            }
         } finally {
+            _streamAbortController = null;
             setStatus('idle', t('status.ready'));
         }
     }
@@ -855,8 +867,6 @@
             return;
         }
         if (isLoading) return;
-        isLoading = true;
-        updateTaskSendState();
         const title = (text || t('sidebar.new_task')).slice(0, 20);
         const message = buildTaskMessage(text || t('sidebar.new_task'));
         try {
@@ -868,10 +878,17 @@
             appendMessage('user', message);
             showTyping();
 
+            // 切换为停止按钮（对话页 sendBtn）
+            setSendBtnToStop();
+            updateTaskSendState();
+
             // 流式输出
             await new Promise((resolve) => {
                 sendMessageStream(id, message, selectedModelId,
-                    makeStreamCallbacks(messagesEl, () => resolve())
+                    makeStreamCallbacks(messagesEl, () => {
+                        setSendBtnToSend();
+                        resolve();
+                    })
                 );
             });
             await loadConversations();
@@ -882,9 +899,7 @@
         } finally {
             isLoading = false;
             updateTaskSendState();
-            if (sendBtn && messageInput) {
-                sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
-            }
+            setSendBtnToSend();
         }
     }
 
@@ -978,13 +993,17 @@
         const text = messageInput.value.trim();
         if (!text || !currentConversationId || isLoading) return;
         messageInput.value = '';
-        sendBtn.disabled = true;
         messageInput.style.height = 'auto';
         appendMessage('user', text);
         showTyping();
 
+        // 切换为停止按钮
+        setSendBtnToStop();
+
         sendMessageStream(currentConversationId, text, selectedModelId,
             makeStreamCallbacks(messagesEl, () => {
+                // 恢复为发送按钮
+                setSendBtnToSend();
                 loadConversations();
                 const conv = conversations.find((c) => c.id === currentConversationId);
                 if (conv) chatTitle.textContent = conv.title;
@@ -992,6 +1011,30 @@
                 updateContextIndicator();
             })
         );
+    }
+
+    function setSendBtnToStop() {
+        isLoading = true;
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
+        sendBtn.classList.add('stop');
+        // 停止按钮点击时中断流式请求
+        sendBtn.onclick = (e) => {
+            e.preventDefault();
+            if (_streamAbortController) {
+                _streamAbortController.abort();
+            }
+            setSendBtnToSend();
+        };
+    }
+
+    function setSendBtnToSend() {
+        isLoading = false;
+        sendBtn.disabled = !messageInput.value.trim() || !currentConversationId;
+        sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+        sendBtn.classList.remove('stop');
+        // 恢复为发送按钮的点击事件
+        sendBtn.onclick = handleSend;
     }
 
     // ===== Dropdowns =====
@@ -1512,7 +1555,8 @@
     const openMemoryBtn = $('open-memory-btn');
     if (openMemoryBtn) openMemoryBtn.addEventListener('click', openHomeDir);
 
-    sendBtn.addEventListener('click', handleSend);
+    // sendBtn 使用 onclick 属性动态切换（发送/停止），不再用 addEventListener
+    sendBtn.onclick = handleSend;
 
     // context indicator
     const contextIndicator = $('context-indicator');

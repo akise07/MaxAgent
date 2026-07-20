@@ -1692,6 +1692,15 @@ html[data-theme="light"] .quick-values button { border-color: #d8dbe0; }
     cursor: not-allowed;
 }
 
+.btn-send.stop {
+    background: #e74c3c;
+    animation: none;
+}
+
+.btn-send.stop:hover {
+    background: #c0392b;
+}
+
 /* ===== Context Indicator ===== */
 .context-indicator-wrap {
     position: relative;
