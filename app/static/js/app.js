@@ -682,9 +682,21 @@
         const el = document.getElementById('typing-indicator');
         if (el) el.remove();
     }
+    // 用户是否主动向上滚动（AI 回答时不自动滚到底部）
+    let _userScrolledUp = false;
+
     function scrollToBottom() {
+        // 如果用户主动向上滚动过，不自动滚动
+        if (_userScrolledUp) return;
         setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 50);
     }
+
+    // 监听滚动事件，判断用户是否在底部
+    messagesEl.addEventListener('scroll', () => {
+        const threshold = 50;  // 距离底部 50px 以内视为"在底部"
+        const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
+        _userScrolledUp = !atBottom;
+    });
 
     // ===== Skills =====
     async function loadSkills() {
