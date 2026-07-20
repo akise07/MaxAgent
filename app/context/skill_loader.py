@@ -35,6 +35,9 @@ def _parse_skill_md(filepath: str, dir_path: str = "") -> SkillSpec | None:
 
     # 提取字段
     name = _extract_field(front, "name")
+    if not name:
+        # 用文件夹名称作为 skill 名称
+        name = os.path.basename(dir_path) if dir_path else ""
     icon = _extract_field(front, "icon") or "🧩"
     category = _extract_field(front, "category") or "通用"
 
@@ -68,6 +71,7 @@ def _parse_skill_md(filepath: str, dir_path: str = "") -> SkillSpec | None:
         when_to_use=when_to_use,
         parameters=parameters,
         dir_path=dir_path,
+        body=body,
     )
 
 

@@ -65,7 +65,7 @@ def get_tool_descriptions(tools: list) -> str:
 
 
 def get_skill_descriptions() -> str:
-    """将 skills 目录下的技能描述格式化为 system prompt 可用的文本。"""
+    """将 skills 目录下的技能完整 skill.md 注入到 system prompt。"""
     skills = get_skills()
     if not skills:
         return ""
@@ -74,27 +74,12 @@ def get_skill_descriptions() -> str:
     for s in skills.values():
         if s.name == "bash":
             continue  # bash 已作为系统工具
-        name = s.name
-        desc = s.description or "暂无描述"
-        icon = s.icon or ""
-        category = s.category or "通用"
-        when = s.when_to_use or ""
-
-        lines.append(f"### {icon} {name}（{category}）")
-        lines.append(desc)
-        if when:
-            lines.append(f"适用场景：{when}")
-        if s.parameters:
-            props = s.parameters.get("properties", {})
-            if props:
-                param_lines = []
-                for pname, pinfo in props.items():
-                    pdesc = pinfo.get("description", "")
-                    required = "必填" if pname in (s.parameters.get("required") or []) else "可选"
-                    param_lines.append(f"  - {pname}（{required}）：{pdesc}")
-                if param_lines:
-                    lines.append("参数：")
-                    lines.extend(param_lines)
+        lines.append(f"### {s.icon} {s.name}（{s.category}）")
+        lines.append("")
+        if s.body:
+            lines.append(s.body)
+        else:
+            lines.append(s.description or "暂无描述")
         lines.append("")
 
     return "\n".join(lines)

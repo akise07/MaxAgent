@@ -14,3 +14,4 @@ class SkillSpec:
     when_to_use: str = ""
     parameters: dict = field(default_factory=dict)
     dir_path: str = ""  # 技能目录绝对路径，用于动态导入执行器
+    body: str = ""  # skill.md 正文（去掉 YAML front matter）
